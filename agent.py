@@ -6,20 +6,22 @@ from game import SnakeGameAI, Direction, Point
 from model import Linear_QNet, QTrainer
 from helper import plot
 
-MAX_MEMORY = 100_000
-BATCH_SIZE = 1000
-LR = 0.001
+import wandb
+
 
 class Agent:
 
     def __init__(self):
         self.n_games = 0
-        self.epsilon = 0 # randomness
-        self.gamma = 0.9 # discount rate
-        self.memory = deque(maxlen=MAX_MEMORY) # popleft()
-        self.model = Linear_QNet(11, 256, 3)
-        self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
+        self.epsilon = 0  # randomness
+        self.gamma = 0.9  # discount rate
+        self.lr = 0.001
+        self.batch_size = 1000
+        self.max_memory = 100_000
 
+        self.memory = deque(maxlen=self.max_memory)  # popleft()
+        self.model = Linear_QNet(11, 256, 3)
+        self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma)
 
     def get_state(self, game):
         head = game.snake[0]
@@ -71,8 +73,8 @@ class Agent:
         self.memory.append((state, action, reward, next_state, done)) # popleft if MAX_MEMORY is reached
 
     def train_long_memory(self):
-        if len(self.memory) > BATCH_SIZE:
-            mini_sample = random.sample(self.memory, BATCH_SIZE) # list of tuples
+        if len(self.memory) > self.batch_size:
+            mini_sample = random.sample(self.memory, self.batch_size) # list of tuples
         else:
             mini_sample = self.memory
 
@@ -100,13 +102,30 @@ class Agent:
         return final_move
 
 
-def train():
+def train(name: str, run: int):
     plot_scores = []
     plot_mean_scores = []
     total_score = 0
     record = 0
     agent = Agent()
     game = SnakeGameAI()
+
+    wandb.init(
+        # Set the project where this run will be logged
+        project='sanke-ai',
+        # We pass a run name (otherwise it’ll be randomly assigned, like sunshine-lollypop-10)
+        name=f"experiment_0-{run}",
+        # Track hyperparameters and run metadata
+        config={
+            "architecture": "Linear_QNet",
+            "learning_rate": agent.lr,
+            "batch_size": agent.batch_size,
+            "max_memory": agent.max_memory,
+            "gamma": agent.gamma,
+            # "epochs": 10,
+        })
+    wandb.watch(agent.model)
+
     while True:
         # get old state
         state_old = agent.get_state(game)
@@ -136,12 +155,23 @@ def train():
 
             print('Game', agent.n_games, 'Score', score, 'Record:', record)
 
-            plot_scores.append(score)
+            # plot_scores.append(score)
             total_score += score
             mean_score = total_score / agent.n_games
-            plot_mean_scores.append(mean_score)
-            plot(plot_scores, plot_mean_scores)
+            # plot_mean_scores.append(mean_score)
+            # plot(plot_scores, plot_mean_scores)
+
+            # weights and baises logging
+            wandb.log({
+                'score': score,
+                'mean_score': mean_score,
+            })
+            if agent.n_games > 800:
+                break
 
 
 if __name__ == '__main__':
-    train()
+    # todo run batch_size [n*2, n*3]
+    # change sampling scheme
+    for i in range(3):
+        train('inital', 0)
