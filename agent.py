@@ -16,10 +16,11 @@ class Agent:
         self.epsilon = 0  # randomness
         self.gamma = 0.9  # discount rate
         self.lr = 0.001
-        self.batch_size = 1000
+        self.batch_size = 10_000
         self.max_memory = 100_000
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
+        # self.non_zero_memory = deque(maxlen=self.max_memory)  # popleft()
         self.model = Linear_QNet(11, 256, 3)
         self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma)
 
@@ -72,6 +73,9 @@ class Agent:
     def remember(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done)) # popleft if MAX_MEMORY is reached
 
+    def remember_no_zero(self, state, action, reward, next_state, done):
+        self.non_zero_memory.append((state, action, reward, next_state, done)) # popleft if MAX_MEMORY is reached
+
     def train_long_memory(self):
         if len(self.memory) > self.batch_size:
             mini_sample = random.sample(self.memory, self.batch_size) # list of tuples
@@ -85,6 +89,20 @@ class Agent:
 
     def train_short_memory(self, state, action, reward, next_state, done):
         self.trainer.train_step(state, action, reward, next_state, done)
+
+    def update_rewards(self, game: SnakeGameAI, last_reward):
+        n_change = min(len(game.snake), 30)
+        last_records = []
+        for _ in range(n_change):
+            (state, action, reward, next_state, done) = self.memory.pop()
+            reward = last_reward  # reward
+            last_records.insert(0, (state, action, reward, next_state, done))
+            # self.remember_no_zero(state, action, reward, next_state, done)
+
+
+        for record in last_records:
+            self.memory.append(record)
+
 
     def get_action(self, state):
         # random moves: tradeoff exploration / exploitation
@@ -114,7 +132,7 @@ def train(name: str, run: int):
         # Set the project where this run will be logged
         project='sanke-ai',
         # We pass a run name (otherwise it’ll be randomly assigned, like sunshine-lollypop-10)
-        name=f"experiment_0-{run}",
+        name=f"{name}-{run}",
         # Track hyperparameters and run metadata
         config={
             "architecture": "Linear_QNet",
@@ -123,10 +141,12 @@ def train(name: str, run: int):
             "max_memory": agent.max_memory,
             "gamma": agent.gamma,
             # "epochs": 10,
-        })
+        },
+        # mode="disabled",
+    )
     wandb.watch(agent.model)
 
-    while True:
+    while agent.n_games < 800:
         # get old state
         state_old = agent.get_state(game)
 
@@ -147,6 +167,7 @@ def train(name: str, run: int):
             # train long memory, plot result
             game.reset()
             agent.n_games += 1
+            agent.update_rewards(game, reward)
             agent.train_long_memory()
 
             if score > record:
@@ -166,12 +187,11 @@ def train(name: str, run: int):
                 'score': score,
                 'mean_score': mean_score,
             })
-            if agent.n_games > 800:
-                break
+    wandb.finish()
 
 
 if __name__ == '__main__':
     # todo run batch_size [n*2, n*3]
-    # change sampling scheme
+    # todo change sampling scheme
     for i in range(3):
-        train('inital', 0)
+        train('update rewards - len 30', i)
