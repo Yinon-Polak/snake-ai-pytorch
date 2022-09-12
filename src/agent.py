@@ -4,9 +4,8 @@ import torch
 import random
 import numpy as np
 from collections import deque
-from game import SnakeGameAI, Direction, Point, BLOCK_SIZE, head_to_global_direction
-from model import Linear_QNet, QTrainer
-from helper import plot
+from src.game import SnakeGameAI, Direction, Point, BLOCK_SIZE, head_to_global_direction
+from src.model import Linear_QNet, QTrainer
 
 import wandb
 
@@ -27,7 +26,7 @@ class Agent:
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
         # self.non_zero_memory = deque(maxlen=self.max_memory)  # popleft()
-        self.model = Linear_QNet(29, 256, 3)
+        self.model = Linear_QNet(20, 256, 3)
         self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma)
 
     @staticmethod
@@ -131,26 +130,26 @@ class Agent:
                                                    point_d=point_d1,
                                                    point_l=point_l1,
                                                    point_u=point_u1, )
-
+        n_steps = 1
         collisions_vec_dist_s1 = self.get_is_collisions_wrapper(
             game,
             game.direction,
             point_l1, point_r1, point_u1, point_d1,
-            2
+            n_steps,
         )
 
         collisions_vec_dist_r1 = self.get_is_collisions_wrapper(
             game,
             [0, 1, 0],
             point_l1, point_r1, point_u1, point_d1,
-            2
+            n_steps,
         )
 
         collisions_vec_dist_l1 = self.get_is_collisions_wrapper(
             game,
             [0, 0, 1],
             point_l1, point_r1, point_u1, point_d1,
-            2
+            n_steps,
         )
 
         # distance_l = head.x / game.w
@@ -292,7 +291,7 @@ class Agent:
         return distance_stright, distance_to_right, distance_to_left
 
 
-def train(name: str, run: int):
+def train(name: str, run: int, wandb_setttings: wandb.Settings = None):
     plot_scores = []
     plot_mean_scores = []
     total_score = 0
@@ -314,11 +313,12 @@ def train(name: str, run: int):
             "gamma": agent.gamma,
             # "epochs": 10,
         },
+        settings=wandb_setttings,
         # mode="disabled",
     )
     wandb.watch(agent.model)
 
-    while agent.n_games < 800:
+    while agent.n_games < 1600:
         # get old state
         state_old = agent.get_state(game)
 
