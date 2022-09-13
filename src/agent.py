@@ -23,13 +23,13 @@ class Agent:
         self.epsilon = 0  # randomness
         self.gamma = 0.9  # discount rate
         self.lr = 0.001
-        self.batch_size = 10_000
+        self.batch_size = 1_000
         self.max_memory = 100_000
         self.n_steps = 1
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
         # self.non_zero_memory = deque(maxlen=self.max_memory)  # popleft()
-        self.model = Linear_QNet(32, 256, 3)
+        self.model = Linear_QNet(14, 256, 3)
         self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma)
 
     @staticmethod
@@ -140,32 +140,33 @@ class Agent:
                                                    point_d=point_d1,
                                                    point_l=point_l1,
                                                    point_u=point_u1, )
-        # todo refactor all 3 to for loop
-        collisions_vec_dist_s1 = self.get_is_collisions_wrapper(
-            game,
-            game.direction,
-            collision_type,
-            point_l1, point_r1, point_u1, point_d1,
-            n_steps,
-        )
-
-        collisions_vec_dist_r1 = self.get_is_collisions_wrapper(
-            game,
-            [0, 1, 0],
-            collision_type,
-            point_l1, point_r1, point_u1, point_d1,
-            n_steps,
-        )
-
-        collisions_vec_dist_l1 = self.get_is_collisions_wrapper(
-            game,
-            [0, 0, 1],
-            collision_type,
-            point_l1, point_r1, point_u1, point_d1,
-            n_steps,
-        )
-
-        return [*collisions_vec_dist_0, *collisions_vec_dist_s1, *collisions_vec_dist_r1, *collisions_vec_dist_l1]
+        # # todo refactor all 3 to for loop
+        # collisions_vec_dist_s1 = self.get_is_collisions_wrapper(
+        #     game,
+        #     game.direction,
+        #     collision_type,
+        #     point_l1, point_r1, point_u1, point_d1,
+        #     n_steps,
+        # )
+        #
+        # collisions_vec_dist_r1 = self.get_is_collisions_wrapper(
+        #     game,
+        #     [0, 1, 0],
+        #     collision_type,
+        #     point_l1, point_r1, point_u1, point_d1,
+        #     n_steps,
+        # )
+        #
+        # collisions_vec_dist_l1 = self.get_is_collisions_wrapper(
+        #     game,
+        #     [0, 0, 1],
+        #     collision_type,
+        #     point_l1, point_r1, point_u1, point_d1,
+        #     n_steps,
+        # )
+        #
+        # return [*collisions_vec_dist_0, *collisions_vec_dist_s1, *collisions_vec_dist_r1, *collisions_vec_dist_l1]
+        return collisions_vec_dist_0
 
     def get_state(self, game):
 
@@ -384,7 +385,7 @@ def train(name: str, run: int, wandb_setttings: wandb.Settings = None):
             # , plot result
             game.reset()
             agent.n_games += 1
-            agent.update_rewards(game, reward)
+            # agent.update_rewards(game, reward)
             agent.train_long_memory()
 
             if score > record:
@@ -409,4 +410,4 @@ def train(name: str, run: int, wandb_setttings: wandb.Settings = None):
 
 if __name__ == '__main__':
     for i in range(3):
-        train('ahead-1-split-collision ; update rewards - len 30', i)
+        train('split-collision', i)
