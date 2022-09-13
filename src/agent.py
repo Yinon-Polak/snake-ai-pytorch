@@ -4,6 +4,8 @@ import torch
 import random
 import numpy as np
 from collections import deque
+
+from src.collision_type import CollisionType
 from src.game import SnakeGameAI, Direction, Point, BLOCK_SIZE, head_to_global_direction
 from src.model import Linear_QNet, QTrainer
 
@@ -23,10 +25,11 @@ class Agent:
         self.lr = 0.001
         self.batch_size = 10_000
         self.max_memory = 100_000
+        self.n_steps = 1
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
         # self.non_zero_memory = deque(maxlen=self.max_memory)  # popleft()
-        self.model = Linear_QNet(20, 256, 3)
+        self.model = Linear_QNet(32, 256, 3)
         self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma)
 
     @staticmethod
@@ -48,6 +51,7 @@ class Agent:
             self,
             game: SnakeGameAI,
             direction: Direction,
+            collision_type: CollisionType,
             point_r: Point,
             point_d: Point,
             point_l: Point,
@@ -55,22 +59,22 @@ class Agent:
     ):
         dir_l, dir_r, dir_u, dir_d = self.get_direction_bool_vector(direction)
         return [
-            (dir_r and game.is_collision(point_r)) or
-            (dir_l and game.is_collision(point_l)) or
-            (dir_u and game.is_collision(point_u)) or
-            (dir_d and game.is_collision(point_d)),
+            (dir_r and game.is_collision(collision_type, point_r)) or
+            (dir_l and game.is_collision(collision_type, point_l)) or
+            (dir_u and game.is_collision(collision_type, point_u)) or
+            (dir_d and game.is_collision(collision_type, point_d)),
 
             # Danger right
-            (dir_u and game.is_collision(point_r)) or
-            (dir_d and game.is_collision(point_l)) or
-            (dir_l and game.is_collision(point_u)) or
-            (dir_r and game.is_collision(point_d)),
+            (dir_u and game.is_collision(collision_type, point_r)) or
+            (dir_d and game.is_collision(collision_type, point_l)) or
+            (dir_l and game.is_collision(collision_type, point_u)) or
+            (dir_r and game.is_collision(collision_type, point_d)),
 
             # Danger left
-            (dir_d and game.is_collision(point_r)) or
-            (dir_u and game.is_collision(point_l)) or
-            (dir_r and game.is_collision(point_u)) or
-            (dir_l and game.is_collision(point_d)),
+            (dir_d and game.is_collision(collision_type, point_r)) or
+            (dir_u and game.is_collision(collision_type, point_l)) or
+            (dir_r and game.is_collision(collision_type, point_u)) or
+            (dir_l and game.is_collision(collision_type, point_d)),
         ]
 
     @staticmethod
@@ -91,6 +95,7 @@ class Agent:
     def get_is_collisions_wrapper(
             self, game: SnakeGameAI,
             turn: List[int],
+            collision_type: CollisionType,
             point_l1: Point,
             point_r1: Point,
             point_u1: Point,
@@ -109,6 +114,7 @@ class Agent:
             point_l1, point_r1, point_u1, point_d1 = self.get_sorounding_points(point_ahead)
             collisions_vec_dist = self.is_collisions(game,
                                                      direction=some_direction,
+                                                     collision_type=collision_type,
                                                      point_r=point_r1,
                                                      point_d=point_d1,
                                                      point_l=point_l1,
@@ -117,23 +123,28 @@ class Agent:
 
         return flatten(collisions_vectors_dist)
 
-    def get_state(self, game):
-
-        dir_l, dir_r, dir_u, dir_d = self.get_direction_bool_vector(game.direction)
-        head = game.snake[0]
-        point_l1, point_r1, point_u1, point_d1 = self.get_sorounding_points(head, c=1)
-        # point_l2, point_r2, point_u2, point_d2 = self.get_sorounding_points(head, c=2)
-
+    def calc_all_directions_collisions(
+            self,
+            game: SnakeGameAI,
+            collision_type: CollisionType,
+            point_l1: Point,
+            point_r1: Point,
+            point_u1: Point,
+            point_d1: Point,
+            n_steps: int = 1,
+    ):
         collisions_vec_dist_0 = self.is_collisions(game,
                                                    direction=game.direction,
+                                                   collision_type=collision_type,
                                                    point_r=point_r1,
                                                    point_d=point_d1,
                                                    point_l=point_l1,
                                                    point_u=point_u1, )
-        n_steps = 1
+        # todo refactor all 3 to for loop
         collisions_vec_dist_s1 = self.get_is_collisions_wrapper(
             game,
             game.direction,
+            collision_type,
             point_l1, point_r1, point_u1, point_d1,
             n_steps,
         )
@@ -141,6 +152,7 @@ class Agent:
         collisions_vec_dist_r1 = self.get_is_collisions_wrapper(
             game,
             [0, 1, 0],
+            collision_type,
             point_l1, point_r1, point_u1, point_d1,
             n_steps,
         )
@@ -148,8 +160,38 @@ class Agent:
         collisions_vec_dist_l1 = self.get_is_collisions_wrapper(
             game,
             [0, 0, 1],
+            collision_type,
             point_l1, point_r1, point_u1, point_d1,
             n_steps,
+        )
+
+        return [*collisions_vec_dist_0, *collisions_vec_dist_s1, *collisions_vec_dist_r1, *collisions_vec_dist_l1]
+
+    def get_state(self, game):
+
+        dir_l, dir_r, dir_u, dir_d = self.get_direction_bool_vector(game.direction)
+        head = game.snake[0]
+        point_l1, point_r1, point_u1, point_d1 = self.get_sorounding_points(head, c=1)
+        # point_l2, point_r2, point_u2, point_d2 = self.get_sorounding_points(head, c=2)
+
+        border_collisions = self.calc_all_directions_collisions(
+            game,
+            CollisionType.BORDER,
+            point_l1,
+            point_r1,
+            point_u1,
+            point_d1,
+            self.n_steps
+        )
+
+        body_collisions = self.calc_all_directions_collisions(
+            game,
+            CollisionType.BODY,
+            point_l1,
+            point_r1,
+            point_u1,
+            point_d1,
+            self.n_steps
         )
 
         # distance_l = head.x / game.w
@@ -161,10 +203,9 @@ class Agent:
         # distance_to_body_stright, distance_to_body_right, distance_to_body_left = self.get_distances_to_body(game)
 
         state = [
-            *collisions_vec_dist_0,
-            *collisions_vec_dist_s1,
-            *collisions_vec_dist_r1,
-            *collisions_vec_dist_l1,
+            *border_collisions,
+            *body_collisions,
+
 
             # Move direction
             dir_l,
@@ -367,7 +408,5 @@ def train(name: str, run: int, wandb_setttings: wandb.Settings = None):
 
 
 if __name__ == '__main__':
-    # todo run batch_size [n*2, n*3]
-    # todo change sampling scheme
     for i in range(3):
-        train('ahead-2-is-collision ; update rewards - len 30', i)
+        train('ahead-1-split-collision ; update rewards - len 30', i)
