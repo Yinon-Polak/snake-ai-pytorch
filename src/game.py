@@ -3,11 +3,13 @@ import random
 from enum import Enum
 from collections import namedtuple
 import numpy as np
+from pathlib import Path
 
 from src.collision_type import CollisionType
 
 pygame.init()
-font = pygame.font.Font('arial.ttf', 25)
+font_path = Path(__file__).parent.parent / 'resources/arial.ttf'
+font = pygame.font.Font(font_path, 25)
 
 
 # font = pygame.font.SysFont('arial', 25)
