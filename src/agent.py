@@ -18,14 +18,25 @@ def flatten(l: List):
 
 class Agent:
 
-    def __init__(self):
-        self.n_games = 0
-        self.epsilon = 0  # randomness
-        self.gamma = 0.9  # discount rate
-        self.lr = 0.001
-        self.batch_size = 1_000
-        self.max_memory = 100_000
-        self.n_steps = 1
+    def __init__(
+            self,
+            n_games: int = 0,
+            max_games: int = 1600,
+            epsilon: int = 0,
+            gamma: float = 0.9,
+            lr: float = 0.001,
+            batch_size: int = 1_000,
+            max_memory: int = 100_000,
+            n_steps: int = 1,
+    ):
+        self.n_games = n_games
+        self.max_games = max_games
+        self.epsilon = epsilon  # randomness
+        self.gamma = gamma  # discount rate
+        self.lr = lr
+        self.batch_size = batch_size
+        self.max_memory = max_memory
+        self.n_steps = n_steps
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
         # self.non_zero_memory = deque(maxlen=self.max_memory)  # popleft()
@@ -207,7 +218,6 @@ class Agent:
             *border_collisions,
             *body_collisions,
 
-
             # Move direction
             dir_l,
             dir_r,
@@ -342,11 +352,8 @@ def train(name: str, run: int, wandb_setttings: wandb.Settings = None):
     game = SnakeGameAI()
 
     wandb.init(
-        # Set the project where this run will be logged
         project='sanke-ai',
-        # We pass a run name (otherwise it’ll be randomly assigned, like sunshine-lollypop-10)
         name=f"{name}-{run}",
-        # Track hyperparameters and run metadata
         config={
             "architecture": "Linear_QNet",
             "learning_rate": agent.lr,
@@ -360,7 +367,7 @@ def train(name: str, run: int, wandb_setttings: wandb.Settings = None):
     )
     wandb.watch(agent.model)
 
-    while agent.n_games < 1600:
+    while agent.n_games < agent.max_games:
         # get old state
         state_old = agent.get_state(game)
 
