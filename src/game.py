@@ -1,10 +1,8 @@
 import random
-from enum import Enum
-from collections import namedtuple
 import numpy as np
 
 from src.collision_type import CollisionType
-from src.pygame_controller import PygameController
+from src.pygame_controller.pygame_controller import PygameController, DummyPygamController
 from src.wrappers import Direction, Point, CLOCK_WISE
 
 BLOCK_SIZE = 20
@@ -12,10 +10,10 @@ BLOCK_SIZE = 20
 
 class SnakeGameAI:
 
-    def __init__(self, w=640, h=480):
+    def __init__(self, w: int = 640, h: int = 480, use_pygame: bool = False):
         self.w = w
         self.h = h
-        self.pygame_controller = PygameController(self.w, self.h, BLOCK_SIZE)
+        self.pygame_controller = PygameController(self.w, self.h, BLOCK_SIZE) if use_pygame else DummyPygamController()
 
         #### vars that's are defined in reset()
         self.direction = None
@@ -96,11 +94,11 @@ class SnakeGameAI:
         if pt is None:
             pt = self.head
         # hits boundary
-        if (collision_type == CollisionType.BORDER or collision_type == CollisionType.BOTH) and\
+        if (collision_type == CollisionType.BORDER or collision_type == CollisionType.BOTH) and \
                 (pt.x > self.w - BLOCK_SIZE or pt.x < 0 or pt.y > self.h - BLOCK_SIZE or pt.y < 0):
             return True
         # hits itself
-        if (collision_type == CollisionType.BODY or collision_type == CollisionType.BOTH) and\
+        if (collision_type == CollisionType.BODY or collision_type == CollisionType.BOTH) and \
                 pt in self.snake[1:]:
             return True
 
