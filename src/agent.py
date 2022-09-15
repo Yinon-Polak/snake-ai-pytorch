@@ -1,15 +1,12 @@
-from typing import Tuple, List
-
 import torch
 import random
 import numpy as np
 from collections import deque
+from typing import Tuple, List
 
 from src.collision_type import CollisionType
 from src.game import SnakeGameAI, Direction, Point, BLOCK_SIZE, head_to_global_direction
 from src.model import Linear_QNet, QTrainer
-
-import wandb
 
 
 def flatten(l: List):
@@ -18,25 +15,27 @@ def flatten(l: List):
 
 class Agent:
 
-    def __init__(
-            self,
-            n_games: int = 0,
-            max_games: int = 1600,
-            epsilon: int = 0,
-            gamma: float = 0.9,
-            lr: float = 0.001,
-            batch_size: int = 1_000,
-            max_memory: int = 100_000,
-            n_steps: int = 1,
-    ):
-        self.n_games = n_games
-        self.max_games = max_games
-        self.epsilon = epsilon  # randomness
-        self.gamma = gamma  # discount rate
-        self.lr = lr
-        self.batch_size = batch_size
-        self.max_memory = max_memory
-        self.n_steps = n_steps
+    def __init__(self, **kwargs):
+        """
+
+        :param n_games:
+        :param max_games:
+        :param epsilon: randomness
+        :param gamma: discount rate
+        :param lr:
+        :param batch_size:
+        :param max_memory:
+        :param n_steps:
+        :param kwargs:
+        """
+        self.n_games: int = kwargs.get('n_games', 0)
+        self.max_games: int = kwargs.get('max_games', 1600)
+        self.epsilon: int = kwargs.get('epsilon', 0)
+        self.gamma: float = kwargs.get('gamma', 0.9)
+        self.lr: float = kwargs.get('lr', 0.001)
+        self.batch_size: int = kwargs.get('batch_size', 1_000)
+        self.max_memory: int = kwargs.get('max_memory', 100_000)
+        self.n_steps: int = kwargs.get('n_steps', 1)
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
         # self.non_zero_memory = deque(maxlen=self.max_memory)  # popleft()
@@ -280,7 +279,8 @@ class Agent:
 
         return final_move
 
-    def get_distances_to_body(self, game: SnakeGameAI) -> Tuple[int, int, int]:
+    @staticmethod
+    def get_distances_to_body(game: SnakeGameAI) -> Tuple[int, int, int]:
         """
 
         :param game:
@@ -342,79 +342,3 @@ class Agent:
 
         return distance_stright, distance_to_right, distance_to_left
 
-
-def train(name: str, run: int, wandb_setttings: wandb.Settings = None):
-    plot_scores = []
-    plot_mean_scores = []
-    total_score = 0
-    record = 0
-    agent = Agent()
-    game = SnakeGameAI()
-
-    wandb.init(
-        project='sanke-ai',
-        name=f"{name}-{run}",
-        config={
-            "architecture": "Linear_QNet",
-            "learning_rate": agent.lr,
-            "batch_size": agent.batch_size,
-            "max_memory": agent.max_memory,
-            "gamma": agent.gamma,
-            # "epochs": 10,
-        },
-        settings=wandb_setttings,
-        # mode="disabled",
-    )
-    wandb.watch(agent.model)
-
-    while agent.n_games < agent.max_games:
-        # get old state
-        state_old = agent.get_state(game)
-
-        # get move
-        final_move = agent.get_action(state_old)
-
-        # perform move and get new state
-        reward, done, score = game.play_step(final_move)
-        state_new = agent.get_state(game)
-
-        # train short memory
-        agent.train_short_memory(state_old, final_move, reward, state_new, done)
-
-        # remember
-        agent.remember(state_old, final_move, reward, state_new, done)
-
-        if done:
-            # train long memory
-            #
-            #
-            #
-            # , plot result
-            game.reset()
-            agent.n_games += 1
-            # agent.update_rewards(game, reward)
-            agent.train_long_memory()
-
-            if score > record:
-                record = score
-                agent.model.save()
-
-            print('Game', agent.n_games, 'Score', score, 'Record:', record)
-
-            # plot_scores.append(score)
-            total_score += score
-            mean_score = total_score / agent.n_games
-            # plot_mean_scores.append(mean_score)
-            # plot(plot_scores, plot_mean_scores)
-
-            # weights and baises logging
-            wandb.log({
-                'score': score,
-                'mean_score': mean_score,
-            })
-    wandb.finish()
-
-
-if __name__ == '__main__':
-    for i in range(3):
-        train('split-collision', i)
