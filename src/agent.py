@@ -2,7 +2,7 @@ import torch
 import random
 import numpy as np
 from collections import deque
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 
 from src.collision_type import CollisionType
 from src.game import SnakeGameAI, Direction, Point, BLOCK_SIZE, head_to_global_direction
@@ -21,6 +21,7 @@ class Agent:
         """
 
         :param n_games:
+        :param n_features: corrently, must be mannually calculated, for santy tracking
         :param max_games:
         :param epsilon: randomness
         :param gamma: discount rate
@@ -28,20 +29,24 @@ class Agent:
         :param batch_size:
         :param max_memory:
         :param n_steps:
+        :param max_update_steps:
         :param kwargs:
         """
-        self.n_games: int = kwargs.get('n_games', 0)
+        self.n_games: int = 0
+        self.n_features: int = kwargs.get("n_features")
         self.max_games: int = kwargs.get('max_games', 1600)
         self.epsilon: int = kwargs.get('epsilon', 0)
         self.gamma: float = kwargs.get('gamma', 0.9)
         self.lr: float = kwargs.get('lr', 0.001)
         self.batch_size: int = kwargs.get('batch_size', 1_000)
         self.max_memory: int = kwargs.get('max_memory', 100_000)
-        self.n_steps: int = kwargs.get('n_steps', 1)
+        self.n_steps_collision_check: int = kwargs.get('n_steps_collision_check', 0)
+        self.max_update_steps: int = kwargs.get('max_update_steps', 0)
+
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
         # self.non_zero_memory = deque(maxlen=self.max_memory)  # popleft()
-        self.model = Linear_QNet(14, 256, 3)
+        self.model = Linear_QNet(self.n_features, 256, 3)
         self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma)
 
     @staticmethod
@@ -143,7 +148,7 @@ class Agent:
             point_r1: Point,
             point_u1: Point,
             point_d1: Point,
-            n_steps: int = 1,
+            n_steps: int,
     ):
         collisions_vec_dist_0 = self.is_collisions(game,
                                                    direction=game.direction,
@@ -152,32 +157,21 @@ class Agent:
                                                    point_d=point_d1,
                                                    point_l=point_l1,
                                                    point_u=point_u1, )
-        # # todo refactor all 3 to for loop
-        # collisions_vec_dist_s1 = self.get_is_collisions_wrapper(
-        #     game,
-        #     game.direction,
-        #     collision_type,
-        #     point_l1, point_r1, point_u1, point_d1,
-        #     n_steps,
-        # )
-        #
-        # collisions_vec_dist_r1 = self.get_is_collisions_wrapper(
-        #     game,
-        #     [0, 1, 0],
-        #     collision_type,
-        #     point_l1, point_r1, point_u1, point_d1,
-        #     n_steps,
-        # )
-        #
-        # collisions_vec_dist_l1 = self.get_is_collisions_wrapper(
-        #     game,
-        #     [0, 0, 1],
-        #     collision_type,
-        #     point_l1, point_r1, point_u1, point_d1,
-        #     n_steps,
-        # )
-        #
-        # return [*collisions_vec_dist_0, *collisions_vec_dist_s1, *collisions_vec_dist_r1, *collisions_vec_dist_l1]
+
+        if n_steps > 0:
+            collisions_vec_ahead = []
+            for direction in [[1, 0, 0], [0, 1, 0], [0, 0, 1]]:
+                collisions_vec_ahead_in_direction = self.get_is_collisions_wrapper(
+                    game,
+                    direction,
+                    collision_type,
+                    point_l1, point_r1, point_u1, point_d1,
+                    n_steps,
+                )
+                collisions_vec_ahead.append(collisions_vec_ahead_in_direction)
+
+            return [*collisions_vec_dist_0, *flatten(collisions_vec_ahead)]
+
         return collisions_vec_dist_0
 
     def get_state(self, game):
@@ -194,7 +188,7 @@ class Agent:
             point_r1,
             point_u1,
             point_d1,
-            self.n_steps
+            self.n_steps_collision_check
         )
 
         body_collisions = self.calc_all_directions_collisions(
@@ -204,7 +198,7 @@ class Agent:
             point_r1,
             point_u1,
             point_d1,
-            self.n_steps
+            self.n_steps_collision_check
         )
 
         # distance_l = head.x / game.w
@@ -240,7 +234,10 @@ class Agent:
     # def remember_no_zero(self, state, action, reward, next_state, done):
     #     self.non_zero_memory.append((state, action, reward, next_state, done)) # popleft if MAX_MEMORY is reached
 
-    def train_long_memory(self):
+    def train_long_memory(self, game: SnakeGameAI, reward):
+        if self.max_update_steps > 0:
+            self.update_rewards(game, reward)
+
         if len(self.memory) > self.batch_size:
             mini_sample = random.sample(self.memory, self.batch_size)  # list of tuples
         else:
@@ -254,8 +251,8 @@ class Agent:
     def train_short_memory(self, state, action, reward, next_state, done):
         self.trainer.train_step(state, action, reward, next_state, done)
 
-    def update_rewards(self, game: SnakeGameAI, last_reward):
-        n_change = min(len(game.snake), 30)
+    def update_rewards(self, game: SnakeGameAI, last_reward: int):
+        n_change = min(len(game.snake), self.max_update_steps)
         last_records = []
         for _ in range(n_change):
             (state, action, reward, next_state, done) = self.memory.pop()
@@ -345,10 +342,11 @@ class Agent:
         return distance_stright, distance_to_right, distance_to_left
 
 
-
 def train(
         name: str,
         run: int,
+        note: str = None,
+        wandb_mode: Optional[str] = None,
         wandb_setttings: wandb.Settings = None,
         agent_kwargs: dict = {},
 ):
@@ -358,18 +356,19 @@ def train(
     game = SnakeGameAI()
 
     wandb.init(
+        reinit=True,
         project='sanke-ai',
         name=f"{name}-{run}",
+        notes=note,
         config={
             "architecture": "Linear_QNet",
             "learning_rate": agent.lr,
             "batch_size": agent.batch_size,
             "max_memory": agent.max_memory,
             "gamma": agent.gamma,
-            # "epochs": 10,
         },
         settings=wandb_setttings,
-        mode="disabled",
+        mode=wandb_mode,
     )
     wandb.bwatch(agent.model)
 
@@ -394,8 +393,7 @@ def train(
             # train long memory
             game.reset()
             agent.n_games += 1
-            # agent.update_rewards(game, reward)
-            agent.train_long_memory()
+            agent.train_long_memory(game, reward)
 
             if score > record:
                 record = score
@@ -415,6 +413,14 @@ def train(
 
 
 if __name__ == '__main__':
-    agent_kwargs = {"max_games": 50}
-    for i in range(3):
-        train('split-collision', i, agent_kwargs=agent_kwargs)
+    # parmas = [
+    #     ("base line - as it came from repo", {}),
+    #     {},
+    # ]
+    # agent_kwargs = {"max_games": 50}
+    #
+    # for run_note, run_params in parmas:
+    #     for i in range(3):
+    #         train('split-collision', i, agent_kwargs=agent_kwargs, note=note)
+
+    train('split-collision', 0, agent_kwargs={"n_features": 14}, note=None, wandb_mode="disabled",)

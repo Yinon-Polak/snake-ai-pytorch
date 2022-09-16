@@ -10,7 +10,16 @@ BLOCK_SIZE = 20
 
 class SnakeGameAI:
 
-    def __init__(self, w: int = 640, h: int = 480, use_pygame: bool = False):
+    def __init__(
+            self,
+            w: int = 640,
+            h: int = 480,
+            use_pygame: bool = False,
+            positive_reward: int = 10,
+            negative_reward: int = -10,
+    ):
+        self.positive_reward = positive_reward
+        self.negative_reward = negative_reward
         self.w = w
         self.h = h
         self.pygame_controller = PygameController(self.w, self.h, BLOCK_SIZE) if use_pygame else DummyPygamController()
@@ -21,8 +30,6 @@ class SnakeGameAI:
         self.snake = None
         self.trail = None
         self.last_trail = None
-        self.is_looping = None
-        self.count_in_tail = None
         self.score = None
         self.food = None
         self.frame_iteration = None
@@ -41,8 +48,6 @@ class SnakeGameAI:
 
         self.trail = []
         self.last_trail = []
-        self.is_looping = False
-        self.count_in_tail = 0
 
         self.score = 0
         self.food = None
@@ -68,15 +73,15 @@ class SnakeGameAI:
         # 3. check if game over
         reward = 0
         game_over = False
-        if self.is_collision(CollisionType.BOTH) or self.frame_iteration > 100 * len(self.snake):
+        if self.is_collision() or self.frame_iteration > 100 * len(self.snake):
             game_over = True
-            reward = -10
+            reward = self.negative_reward
             return reward, game_over, self.score
 
         # 4. place new food or just move
         if self.head == self.food:
             self.score += 1
-            reward = 10
+            reward = self.positive_reward
             self._place_food()
             self.last_trail.clear()
         else:
@@ -90,7 +95,7 @@ class SnakeGameAI:
         # 6. return game over and score
         return reward, game_over, self.score
 
-    def is_collision(self, collision_type: CollisionType, pt: Point = None):
+    def is_collision(self, collision_type: CollisionType = CollisionType.BOTH, pt: Point = None):
         if pt is None:
             pt = self.head
         # hits boundary
