@@ -2,7 +2,7 @@ import torch
 import random
 import numpy as np
 from collections import deque
-from typing import Tuple, List, Optional
+from typing import Tuple, List, Optional, Deque
 
 from src.collision_type import CollisionType
 from src.game import SnakeGameAI, Direction, Point, BLOCK_SIZE, head_to_global_direction
@@ -34,7 +34,7 @@ class Agent:
         """
         self.n_games: int = 0
         self.n_features: int = kwargs.get("n_features")
-        self.max_games: int = kwargs.get('max_games', 1600)
+        self.max_games: int = kwargs.get('max_games', 5000)
         self.epsilon: int = kwargs.get('epsilon', 0)
         self.gamma: float = kwargs.get('gamma', 0.9)
         self.lr: float = kwargs.get('lr', 0.001)
@@ -42,10 +42,10 @@ class Agent:
         self.max_memory: int = kwargs.get('max_memory', 100_000)
         self.n_steps_collision_check: int = kwargs.get('n_steps_collision_check', 0)
         self.max_update_steps: int = kwargs.get('max_update_steps', 0)
-
+        self.collision_types: List[CollisionType] = kwargs.get('collision_types', [CollisionType.BOTH])
+        # self.non_zero_memory: Deque[int] = kwargs.get('non_zero_memory', deque(maxlen=self.max_memory))
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
-        # self.non_zero_memory = deque(maxlen=self.max_memory)  # popleft()
         self.model = Linear_QNet(self.n_features, 256, 3)
         self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma)
 
@@ -73,7 +73,7 @@ class Agent:
             point_d: Point,
             point_l: Point,
             point_u: Point,
-    ):
+    ) -> List[bool]:
         dir_l, dir_r, dir_u, dir_d = self.get_direction_bool_vector(direction)
         return [
             (dir_r and game.is_collision(collision_type, point_r)) or
@@ -95,7 +95,7 @@ class Agent:
         ]
 
     @staticmethod
-    def get_direction_bool_vector(direction):
+    def get_direction_bool_vector(direction) -> List[bool]:
         dir_l = direction == Direction.LEFT
         dir_r = direction == Direction.RIGHT
         dir_u = direction == Direction.UP
@@ -149,7 +149,7 @@ class Agent:
             point_u1: Point,
             point_d1: Point,
             n_steps: int,
-    ):
+    ) -> List[bool]:
         collisions_vec_dist_0 = self.is_collisions(game,
                                                    direction=game.direction,
                                                    collision_type=collision_type,
@@ -158,42 +158,55 @@ class Agent:
                                                    point_l=point_l1,
                                                    point_u=point_u1, )
 
-        if n_steps > 0:
-            collisions_vec_ahead = []
-            for direction in [[1, 0, 0], [0, 1, 0], [0, 0, 1]]:
-                collisions_vec_ahead_in_direction = self.get_is_collisions_wrapper(
-                    game,
-                    direction,
-                    collision_type,
-                    point_l1, point_r1, point_u1, point_d1,
-                    n_steps,
-                )
-                collisions_vec_ahead.append(collisions_vec_ahead_in_direction)
+        if n_steps == 0:
+            return collisions_vec_dist_0
 
-            return [*collisions_vec_dist_0, *flatten(collisions_vec_ahead)]
+        collisions_vec_ahead = [
+            self.get_is_collisions_wrapper(
+                game,
+                direction,
+                collision_type,
+                point_l1, point_r1, point_u1, point_d1,
+                n_steps,
+            ) for direction in [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+        ]
 
-        return collisions_vec_dist_0
+        return [*collisions_vec_dist_0, *flatten(collisions_vec_ahead)]
 
-    def get_state(self, game):
+
+    def clac_collision_vec_by_type(
+            self,
+            game: SnakeGameAI,
+            collision_types: List[CollisionType],
+            point_l1: Point,
+            point_r1: Point,
+            point_u1: Point,
+            point_d1: Point,
+            n_steps: int,
+    ) -> List[bool]:
+        collisions_vec = [
+            self.calc_all_directions_collisions(
+                game,
+                collision_type,
+                point_l1,
+                point_r1,
+                point_u1,
+                point_d1,
+                self.n_steps_collision_check
+            ) for collision_type in collision_types
+        ]
+
+        return flatten(collisions_vec)
+
+    def get_state(self, game) -> np.array:
 
         dir_l, dir_r, dir_u, dir_d = self.get_direction_bool_vector(game.direction)
         head = game.snake[0]
         point_l1, point_r1, point_u1, point_d1 = self.get_sorounding_points(head, c=1)
-        # point_l2, point_r2, point_u2, point_d2 = self.get_sorounding_points(head, c=2)
 
-        border_collisions = self.calc_all_directions_collisions(
+        collisions_vec = self.clac_collision_vec_by_type(
             game,
-            CollisionType.BORDER,
-            point_l1,
-            point_r1,
-            point_u1,
-            point_d1,
-            self.n_steps_collision_check
-        )
-
-        body_collisions = self.calc_all_directions_collisions(
-            game,
-            CollisionType.BODY,
+            self.collision_types,
             point_l1,
             point_r1,
             point_u1,
@@ -210,8 +223,9 @@ class Agent:
         # distance_to_body_stright, distance_to_body_right, distance_to_body_left = self.get_distances_to_body(game)
 
         state = [
-            *border_collisions,
-            *body_collisions,
+
+            # is collision
+            *collisions_vec,
 
             # Move direction
             dir_l,
@@ -343,7 +357,7 @@ class Agent:
 
 
 def train(
-        name: str,
+        group: str,
         run: int,
         note: str = None,
         wandb_mode: Optional[str] = None,
@@ -358,7 +372,8 @@ def train(
     wandb.init(
         reinit=True,
         project='sanke-ai',
-        name=f"{name}-{run}",
+        group=group,
+        name=str(run),
         notes=note,
         config={
             "architecture": "Linear_QNet",
@@ -413,14 +428,4 @@ def train(
 
 
 if __name__ == '__main__':
-    # parmas = [
-    #     ("base line - as it came from repo", {}),
-    #     {},
-    # ]
-    # agent_kwargs = {"max_games": 50}
-    #
-    # for run_note, run_params in parmas:
-    #     for i in range(3):
-    #         train('split-collision', i, agent_kwargs=agent_kwargs, note=note)
-
-    train('split-collision', 0, agent_kwargs={"n_features": 14}, note=None, wandb_mode="disabled",)
+    train('split-collision', 0, agent_kwargs={"n_features": 11}, note=None, wandb_mode="disabled",)
