@@ -240,7 +240,7 @@ class Agent:
             game.food.y > game.head.y,  # food down
         ]
 
-        return np.array(state, dtype=int)
+        return torch.tensor(state, dtype=torch.float)
 
     def remember(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))  # popleft if MAX_MEMORY is reached
@@ -371,7 +371,7 @@ def train(
 
     wandb.init(
         reinit=True,
-        project='sanke-ai',
+        project='sanke-ai-group-runs',
         group=group,
         name=str(run),
         notes=note,
@@ -428,4 +428,24 @@ def train(
 
 
 if __name__ == '__main__':
-    train('split-collision', 0, agent_kwargs={"n_features": 11}, note=None, wandb_mode="disabled",)
+    wandb_mode = "disabled"
+    # wandb_mode = "online"
+
+    parmas = [
+        ("base-line", "base line - as it came from repo", {"n_features": 11}),
+        ("batch-size-2000", "increase batch size to 2000", {"n_features": 11, "batch_size": 2000}),
+        ("batch-size-5000", "increase batch size to 5000", {"n_features": 11, "batch_size": 5000}),
+        ("batch-size-10000", "increase batch size to 10000", {"n_features": 11, "batch_size": 10000}),
+    ]
+
+    for group, note, agent_kwargs in parmas:
+        for i in range(10):
+            train(
+                group=group,
+                run=i,
+                note=note,
+                wandb_mode=wandb_mode,
+                agent_kwargs=agent_kwargs,
+            )
+
+    # train('split-collision', 0, agent_kwargs={"n_features": 11, "max_games": 10}, note=None, wandb_mode="disabled",)
