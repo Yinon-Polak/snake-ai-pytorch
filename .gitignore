@@ -1,6 +1,7 @@
 .idea
 __pycache__
 credentials.ini
+credentials.colab.ini
 */model
 */wandb
 */.ipynb_checkpoints/
