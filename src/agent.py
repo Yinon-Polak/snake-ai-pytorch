@@ -34,7 +34,7 @@ class Agent:
         """
         self.n_games: int = 0
         self.n_features: int = kwargs.get("n_features")
-        self.max_games: int = kwargs.get('max_games', 5000)
+        self.max_games: int = kwargs.get('max_games', 3500)
         self.epsilon: int = kwargs.get('epsilon', 0)
         self.gamma: float = kwargs.get('gamma', 0.9)
         self.lr: float = kwargs.get('lr', 0.001)
@@ -48,6 +48,8 @@ class Agent:
         self.memory = deque(maxlen=self.max_memory)  # popleft()
         self.model = Linear_QNet(self.n_features, 256, 3)
         self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma)
+
+        self.last_scores = deque(maxlen=500)
 
     @staticmethod
     def get_sorounding_points(point: Point, c: int = 1) -> Tuple[Point, Point, Point, Point]:
@@ -250,7 +252,7 @@ class Agent:
 
     def train_long_memory(self, game: SnakeGameAI, reward):
         if self.max_update_steps > 0:
-            self.update_rewards(game, reward)
+            self._update_rewards(game, reward)
 
         if len(self.memory) > self.batch_size:
             mini_sample = random.sample(self.memory, self.batch_size)  # list of tuples
@@ -265,7 +267,7 @@ class Agent:
     def train_short_memory(self, state, action, reward, next_state, done):
         self.trainer.train_step(state, action, reward, next_state, done)
 
-    def update_rewards(self, game: SnakeGameAI, last_reward: int):
+    def _update_rewards(self, game: SnakeGameAI, last_reward: int):
         n_change = min(len(game.snake), self.max_update_steps)
         last_records = []
         for _ in range(n_change):
@@ -385,7 +387,12 @@ def train(
         settings=wandb_setttings,
         mode=wandb_mode,
     )
-    wandb.bwatch(agent.model)
+
+    try:
+        wandb.bwatch(agent.model)
+    except Exception as e:
+        print(e)
+        wandb.watch(agent.model)
 
     while agent.n_games < agent.max_games:
         # get old state
@@ -417,29 +424,38 @@ def train(
             print('Game', agent.n_games, 'Score', score, 'Record:', record)
 
             total_score += score
+            agent.last_scores.append(score)
+            ma = sum(agent.last_scores) / agent.n_games
             mean_score = total_score / agent.n_games
+
 
             # weights and baises logging
             wandb.log({
                 'score': score,
                 'mean_score': mean_score,
+                'ma_500_score': ma,
             })
+
+
     wandb.finish()
 
 
 if __name__ == '__main__':
-    wandb_mode = "disabled"
-    # wandb_mode = "online"
+    # wandb_mode = "disabled"
+    wandb_mode = "online"
 
     parmas = [
-        ("base-line", "base line - as it came from repo", {"n_features": 11}),
-        ("batch-size-2000", "increase batch size to 2000", {"n_features": 11, "batch_size": 2000}),
-        ("batch-size-5000", "increase batch size to 5000", {"n_features": 11, "batch_size": 5000}),
-        ("batch-size-10000", "increase batch size to 10000", {"n_features": 11, "batch_size": 10000}),
+        # ("base-line", "base line - as it came from repo", {"n_features": 11}),
+        # ("batch-size-2000", "increase batch size to 2000", {"n_features": 11, "batch_size": 2000}),
+        # ("batch-size-5000", "increase batch size to 5000", {"n_features": 11, "batch_size": 5000}),
+        ("batch-size=10_000", "increase batch size to 10000", {"n_features": 11, "batch_size": 10_000}),
+        ("split-collisions", "collision_types = [CollisionType.BODY, CollisionType.BORDER]", {"n_features": 14, "collision_types": [CollisionType.BODY, CollisionType.BORDER]}),
+        ("max_update_steps=30", "set last 30 moves reward equal last reward", {"n_features": 11, "max_update_steps": 30}),
+        ("n_steps_collision_check=1", "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH", {"n_features": 20, "n_steps_collision_check": 1}),
     ]
 
-    for group, note, agent_kwargs in parmas:
-        for i in range(10):
+    for (j, (group, note, agent_kwargs)) in enumerate(parmas):
+        for i in range(5):
             train(
                 group=group,
                 run=i,
@@ -449,3 +465,4 @@ if __name__ == '__main__':
             )
 
     # train('split-collision', 0, agent_kwargs={"n_features": 11, "max_games": 10}, note=None, wandb_mode="disabled",)
+
