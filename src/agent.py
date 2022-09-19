@@ -425,7 +425,7 @@ def train(
 
             total_score += score
             agent.last_scores.append(score)
-            ma = sum(agent.last_scores) / agent.n_games
+            ma = sum(agent.last_scores) / len(agent.last_scores)
             mean_score = total_score / agent.n_games
 
 
@@ -448,7 +448,7 @@ if __name__ == '__main__':
         # ("base-line", "base line - as it came from repo", {"n_features": 11}),
         # ("batch-size-2000", "increase batch size to 2000", {"n_features": 11, "batch_size": 2000}),
         # ("batch-size-5000", "increase batch size to 5000", {"n_features": 11, "batch_size": 5000}),
-        ("batch-size=10_000", "increase batch size to 10000", {"n_features": 11, "batch_size": 10_000}),
+        # ("batch-size=10_000", "increase batch size to 10000", {"n_features": 11, "batch_size": 10_000}),
         ("split-collisions", "collision_types = [CollisionType.BODY, CollisionType.BORDER]", {"n_features": 14, "collision_types": [CollisionType.BODY, CollisionType.BORDER]}),
         ("max_update_steps=30", "set last 30 moves reward equal last reward", {"n_features": 11, "max_update_steps": 30}),
         ("n_steps_collision_check=1", "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH", {"n_features": 20, "n_steps_collision_check": 1}),
