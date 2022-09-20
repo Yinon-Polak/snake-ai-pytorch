@@ -456,16 +456,15 @@ if __name__ == '__main__':
 
     single_runs_settings = [
         RunSettings(
-            "initial-test",
+            "initial-test-refactor",
             "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH",
             {"n_features": 20, "n_steps_collision_check": 1, "max_games": 30},
             wandb_mode
         )
     ]
 
-    multiple_runs_settings = []
-    for run_settings in single_runs_settings:
-        multiple_runs_settings.extend(*run_settings.generate_instances(n=n))
+    multiple_runs_settings = flatten([run_settings.generate_instances(n=n) for run_settings in single_runs_settings])
+
 
     from multiprocessing import Pool
 
