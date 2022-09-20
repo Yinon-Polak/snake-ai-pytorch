@@ -18,6 +18,21 @@ def flatten(l: List):
     return [item for sublist in l for item in sublist]
 
 
+DEFAULT_AGENT_KWARGS = {
+    'n_features': 11,
+    'max_games': 3500,
+    'epsilon': 0,
+    'gamma': 0.9,
+    'lr': 0.001,
+    'batch_size': 1_000,
+    'max_memory': 100_000,
+    'n_steps_collision_check': 0,
+    'max_update_steps': 0,
+    'collision_types': [CollisionType.BOTH],
+    'model_hidden_size_l1': 256,
+}
+
+
 class Agent:
 
     def __init__(self, **kwargs):
@@ -35,21 +50,28 @@ class Agent:
         :param max_update_steps:
         :param kwargs:
         """
+        if kwargs:
+            DEFAULT_AGENT_KWARGS.update(kwargs)
+            kwargs = DEFAULT_AGENT_KWARGS
+        else:
+            kwargs = DEFAULT_AGENT_KWARGS
+
         self.n_games: int = 0
-        self.n_features: int = kwargs.get("n_features")
-        self.max_games: int = kwargs.get('max_games', 3500)
-        self.epsilon: int = kwargs.get('epsilon', 0)
-        self.gamma: float = kwargs.get('gamma', 0.9)
-        self.lr: float = kwargs.get('lr', 0.001)
-        self.batch_size: int = kwargs.get('batch_size', 1_000)
-        self.max_memory: int = kwargs.get('max_memory', 100_000)
-        self.n_steps_collision_check: int = kwargs.get('n_steps_collision_check', 0)
-        self.max_update_steps: int = kwargs.get('max_update_steps', 0)
-        self.collision_types: List[CollisionType] = kwargs.get('collision_types', [CollisionType.BOTH])
+        self.n_features: int = kwargs["n_features"]
+        self.max_games: int = kwargs['max_games']
+        self.epsilon: int = kwargs['epsilon']
+        self.gamma: float = kwargs['gamma']
+        self.lr: float = kwargs['lr']
+        self.batch_size: int = kwargs['batch_size']
+        self.max_memory: int = kwargs['max_memory']
+        self.n_steps_collision_check: int = kwargs['n_steps_collision_check']
+        self.max_update_steps: int = kwargs['max_update_steps']
+        self.collision_types: List[CollisionType] = kwargs['collision_types']
+        self.model_hidden_size_l1: int = kwargs['model_hidden_size_l1']
         # self.non_zero_memory: Deque[int] = kwargs.get('non_zero_memory', deque(maxlen=self.max_memory))
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
-        self.model = Linear_QNet(self.n_features, 256, 3)
+        self.model = Linear_QNet(input_size=self.n_features, hidden_size=self.model_hidden_size_l1, output_size=3)
         self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma)
 
         self.last_scores = deque(maxlen=500)
@@ -382,7 +404,7 @@ def train(run_settings: RunSettings):
 
     wandb.init(
         reinit=True,
-        project='test-multiprocessing',
+        project='test-multiprocessing-2',
         group=run_settings.group,
         name=str(run_settings.index),
         notes=run_settings.note,
@@ -470,3 +492,11 @@ if __name__ == '__main__':
 
     with Pool(2) as p:
         print(p.map(train, multiple_runs_settings))
+
+    # run_settings = RunSettings(
+    #     "initial-test-refactor",
+    #     "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH",
+    #     {"n_features": 20, "n_steps_collision_check": 1, "max_games": 30},
+    #     wandb_mode
+    # )
+    # train(run_settings)
