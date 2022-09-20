@@ -1,3 +1,6 @@
+import dataclasses
+from dataclasses import dataclass
+
 import torch
 import random
 import numpy as np
@@ -358,25 +361,31 @@ class Agent:
         return distance_stright, distance_to_right, distance_to_left
 
 
-def train(
-        group: str,
-        run: int,
-        note: str = None,
-        wandb_mode: Optional[str] = None,
-        wandb_setttings: wandb.Settings = None,
-        agent_kwargs: dict = {},
-):
+@dataclass
+class RunSettings:
+    group: str
+    note: str
+    agent_kwargs: dict
+    wandb_mode: str
+    wandb_setttings: Optional[wandb.Settings] = None
+    index: Optional[int] = None
+
+    def generate_instances(self, n: int):
+        return [dataclasses.replace(self, index=i) for i in range(n)]
+
+
+def train(run_settings: RunSettings):
     total_score = 0
     record = 0
-    agent = Agent(**agent_kwargs)
+    agent = Agent(**run_settings.agent_kwargs)
     game = SnakeGameAI()
 
     wandb.init(
         reinit=True,
-        project='sanke-ai-group-runs',
-        group=group,
-        name=str(run),
-        notes=note,
+        project='test-multiprocessing',
+        group=run_settings.group,
+        name=str(run_settings.index),
+        notes=run_settings.note,
         config={
             "architecture": "Linear_QNet",
             "learning_rate": agent.lr,
@@ -384,7 +393,7 @@ def train(
             "max_memory": agent.max_memory,
             "gamma": agent.gamma,
         },
-        settings=wandb_setttings,
+        settings=run_settings.wandb_setttings,
         mode=wandb_mode,
     )
 
@@ -443,26 +452,22 @@ def train(
 if __name__ == '__main__':
     # wandb_mode = "disabled"
     wandb_mode = "online"
+    n = 5
 
-    parmas = [
-        # ("base-line", "base line - as it came from repo", {"n_features": 11}),
-        # ("batch-size-2000", "increase batch size to 2000", {"n_features": 11, "batch_size": 2000}),
-        # ("batch-size-5000", "increase batch size to 5000", {"n_features": 11, "batch_size": 5000}),
-        # ("batch-size=10_000", "increase batch size to 10000", {"n_features": 11, "batch_size": 10_000}),
-        ("split-collisions", "collision_types = [CollisionType.BODY, CollisionType.BORDER]", {"n_features": 14, "collision_types": [CollisionType.BODY, CollisionType.BORDER]}),
-        ("max_update_steps=30", "set last 30 moves reward equal last reward", {"n_features": 11, "max_update_steps": 30}),
-        ("n_steps_collision_check=1", "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH", {"n_features": 20, "n_steps_collision_check": 1}),
+    single_runs_settings = [
+        RunSettings(
+            "initial-test",
+            "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH",
+            {"n_features": 20, "n_steps_collision_check": 1, "max_games": 30},
+            wandb_mode
+        )
     ]
 
-    for (j, (group, note, agent_kwargs)) in enumerate(parmas):
-        for i in range(5):
-            train(
-                group=group,
-                run=i,
-                note=note,
-                wandb_mode=wandb_mode,
-                agent_kwargs=agent_kwargs,
-            )
+    multiple_runs_settings = []
+    for run_settings in single_runs_settings:
+        multiple_runs_settings.extend(*run_settings.generate_instances(n=n))
 
-    # train('split-collision', 0, agent_kwargs={"n_features": 11, "max_games": 10}, note=None, wandb_mode="disabled",)
+    from multiprocessing import Pool
 
+    with Pool(2) as p:
+        print(p.map(train, multiple_runs_settings))
