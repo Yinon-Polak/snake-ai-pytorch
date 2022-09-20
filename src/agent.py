@@ -19,7 +19,6 @@ def flatten(l: List):
 
 
 DEFAULT_AGENT_KWARGS = {
-    'n_features': 11,
     'max_games': 3500,
     'epsilon': 0,
     'gamma': 0.9,
@@ -35,7 +34,7 @@ DEFAULT_AGENT_KWARGS = {
 
 class Agent:
 
-    def __init__(self, **kwargs):
+    def __init__(self, game: SnakeGameAI, **kwargs):
         """
 
         :param n_games:
@@ -57,7 +56,7 @@ class Agent:
             kwargs = DEFAULT_AGENT_KWARGS
 
         self.n_games: int = 0
-        self.n_features: int = kwargs["n_features"]
+        # self.n_features: int = kwargs["n_features"]
         self.max_games: int = kwargs['max_games']
         self.epsilon: int = kwargs['epsilon']
         self.gamma: float = kwargs['gamma']
@@ -71,10 +70,12 @@ class Agent:
         # self.non_zero_memory: Deque[int] = kwargs.get('non_zero_memory', deque(maxlen=self.max_memory))
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
-        self.model = Linear_QNet(input_size=self.n_features, hidden_size=self.model_hidden_size_l1, output_size=3)
-        self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma)
 
         self.last_scores = deque(maxlen=500)
+
+        self.n_features = len(self.get_state(game))
+        self.model = Linear_QNet(input_size=self.n_features, hidden_size=self.model_hidden_size_l1, output_size=3)
+        self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma)
 
     @staticmethod
     def get_sorounding_points(point: Point, c: int = 1) -> Tuple[Point, Point, Point, Point]:
@@ -399,12 +400,12 @@ class RunSettings:
 def train(run_settings: RunSettings):
     total_score = 0
     record = 0
-    agent = Agent(**run_settings.agent_kwargs)
     game = SnakeGameAI()
+    agent = Agent(game, **run_settings.agent_kwargs)
 
     wandb.init(
         reinit=True,
-        project='test-multiprocessing-2',
+        project='test-automatic-n-features-setting',
         group=run_settings.group,
         name=str(run_settings.index),
         notes=run_settings.note,
@@ -472,31 +473,31 @@ def train(run_settings: RunSettings):
 
 
 if __name__ == '__main__':
-    # wandb_mode = "disabled"
-    wandb_mode = "online"
-    n = 5
+    wandb_mode = "disabled"
+    # wandb_mode = "online"
 
-    single_runs_settings = [
-        RunSettings(
-            "initial-test-refactor",
-            "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH",
-            {"n_features": 20, "n_steps_collision_check": 1, "max_games": 30},
-            wandb_mode
-        )
-    ]
+    # n = 5
+    # single_runs_settings = [
+    #     RunSettings(
+    #         "initial-test-refactor",
+    #         "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH",
+    #         {"n_steps_collision_check": 1, "max_games": 30},
+    #         wandb_mode
+    #     )
+    # ]
+    #
+    # multiple_runs_settings = flatten([run_settings.generate_instances(n=n) for run_settings in single_runs_settings])
+    #
+    #
+    # from multiprocessing import Pool
+    #
+    # with Pool(2) as p:
+    #     print(p.map(train, multiple_runs_settings))
 
-    multiple_runs_settings = flatten([run_settings.generate_instances(n=n) for run_settings in single_runs_settings])
-
-
-    from multiprocessing import Pool
-
-    with Pool(2) as p:
-        print(p.map(train, multiple_runs_settings))
-
-    # run_settings = RunSettings(
-    #     "initial-test-refactor",
-    #     "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH",
-    #     {"n_features": 20, "n_steps_collision_check": 1, "max_games": 30},
-    #     wandb_mode
-    # )
-    # train(run_settings)
+    run_settings = RunSettings(
+        "initial-test-refactor",
+        "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH",
+        {"n_steps_collision_check": 1, "max_games": 30},
+        wandb_mode
+    )
+    train(run_settings)
