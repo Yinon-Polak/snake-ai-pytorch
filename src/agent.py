@@ -13,14 +13,12 @@ from src.model import Linear_QNet, QTrainer
 
 import wandb
 
-
-def flatten(l: List):
-    return [item for sublist in l for item in sublist]
-
+from src.utils.agent_utils.proximity_calculator import ProximityCalculator
+from src.utils.utils import flatten
 
 DEFAULT_AGENT_KWARGS = {
     'n_features': 11,
-    'max_games': 3500,
+    'max_games': 2000,
     'epsilon': 0,
     'gamma': 0.9,
     'lr': 0.001,
@@ -30,6 +28,7 @@ DEFAULT_AGENT_KWARGS = {
     'max_update_steps': 0,
     'collision_types': [CollisionType.BOTH],
     'model_hidden_size_l1': 256,
+    'n_steps_proximity_check': 0
 }
 
 
@@ -69,6 +68,7 @@ class Agent:
         self.collision_types: List[CollisionType] = kwargs['collision_types']
         self.model_hidden_size_l1: int = kwargs['model_hidden_size_l1']
         # self.non_zero_memory: Deque[int] = kwargs.get('non_zero_memory', deque(maxlen=self.max_memory))
+        self.n_steps_proximity_check: int = kwargs['n_steps_proximity_check']
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
         self.model = Linear_QNet(input_size=self.n_features, hidden_size=self.model_hidden_size_l1, output_size=3)
@@ -137,7 +137,8 @@ class Agent:
     # oriatation features - get collisotions one step ahead in each snake direction [stright, right, left]
     # syntax: point_ snake_direction_ [stright, right, left], global_ { Direction }
     def get_is_collisions_wrapper(
-            self, game: SnakeGameAI,
+            self,
+            game: SnakeGameAI,
             turn: List[int],
             collision_type: CollisionType,
             point_l1: Point,
@@ -241,15 +242,16 @@ class Agent:
             self.n_steps_collision_check
         )
 
-        # distance_l = head.x / game.w
-        # distance_r = (game.w - head.x) / game.w
-        # distance_u = (game.h - head.y) / game.h
-        # distance_d = head.x / game.h
-        #
-        # # distance to body
-        # distance_to_body_stright, distance_to_body_right, distance_to_body_left = self.get_distances_to_body(game)
+        # distance to body
+        distance_to_body_vec = ProximityCalculator().calc_proximity(
+            game,
+            self.n_steps_proximity_check,
+            point_l1, point_r1, point_u1, point_d1,
+        )
 
         state = [
+            # distance to body
+            *distance_to_body_vec,
 
             # is collision
             *collisions_vec,
@@ -319,68 +321,6 @@ class Agent:
 
         return final_move
 
-    @staticmethod
-    def get_distances_to_body(game: SnakeGameAI) -> Tuple[int, int, int]:
-        """
-
-        :param game:
-        :param look_dierction:
-        :return:
-        """
-
-        def is_snake_point_right(p):
-            return p.y == game.head.y and p.x > game.head.x
-
-        def is_snake_point_down(p):
-            return p.x == game.head.x and p.y > game.head.y
-
-        def is_snake_point_left(p):
-            return p.y == game.head.y and p.x < game.head.x
-
-        def is_snake_point_up(p):
-            return p.x == game.head.x and p.y < game.head.y
-
-        def get_same_lines_criteria(direction):
-            if direction == Direction.RIGHT:
-                return is_snake_point_right
-            if direction == Direction.DOWN:
-                return is_snake_point_down
-            if direction == Direction.LEFT:
-                return is_snake_point_left
-            if direction == Direction.UP:
-                return is_snake_point_up
-
-        def y_dist(p):
-            return abs(p.x - game.head.x)
-
-        def x_dist(p):
-            return abs(p.y - game.head.y)
-
-        def get_distance_to_closest_point(direction):
-            criteria = get_same_lines_criteria(game.direction)
-            body_points = sorted(
-                filter(criteria, game.snake),
-                key=x_dist if direction in [Direction.RIGHT, Direction.LEFT] else y_dist,
-            )
-            closest_point = next(iter(body_points), None)
-            if not closest_point:
-                return 1
-
-            dist_func = x_dist if direction in [Direction.RIGHT, Direction.LEFT] else y_dist
-            return dist_func(closest_point) / game.w
-
-        # dist to body stright
-        distance_stright = get_distance_to_closest_point(game.direction)
-
-        # distance to body right
-        direction = head_to_global_direction(current_direction=game.direction, action=[0, 1, 0])
-        distance_to_right = get_distance_to_closest_point(direction)
-
-        # distance to left
-        direction = head_to_global_direction(current_direction=game.direction, action=[0, 0, 1])
-        distance_to_left = get_distance_to_closest_point(direction)
-
-        return distance_stright, distance_to_right, distance_to_left
 
 
 @dataclass
@@ -459,7 +399,6 @@ def train(run_settings: RunSettings):
             ma = sum(agent.last_scores) / len(agent.last_scores)
             mean_score = total_score / agent.n_games
 
-
             # weights and baises logging
             wandb.log({
                 'score': score,
@@ -467,36 +406,35 @@ def train(run_settings: RunSettings):
                 'ma_500_score': ma,
             })
 
-
     wandb.finish()
 
 
 if __name__ == '__main__':
-    # wandb_mode = "disabled"
-    wandb_mode = "online"
-    n = 5
+    wandb_mode = "disabled"
+    # wandb_mode = "online"
 
-    single_runs_settings = [
-        RunSettings(
-            "initial-test-refactor",
-            "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH",
-            {"n_features": 20, "n_steps_collision_check": 1, "max_games": 30},
-            wandb_mode
-        )
-    ]
+    # n = 5
+    # single_runs_settings = [
+    #     RunSettings(
+    #         "initial-test-refactor",
+    #         "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH",
+    #         {"n_features": 14, "max_games": 30},
+    #         wandb_mode
+    #     )
+    # ]
+    #
+    # multiple_runs_settings = flatten([run_settings.generate_instances(n=n) for run_settings in single_runs_settings])
+    #
+    #
+    # from multiprocessing import Pool
+    #
+    # with Pool(2) as p:
+    #     print(p.map(train, multiple_runs_settings))
 
-    multiple_runs_settings = flatten([run_settings.generate_instances(n=n) for run_settings in single_runs_settings])
-
-
-    from multiprocessing import Pool
-
-    with Pool(2) as p:
-        print(p.map(train, multiple_runs_settings))
-
-    # run_settings = RunSettings(
-    #     "initial-test-refactor",
-    #     "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH",
-    #     {"n_features": 20, "n_steps_collision_check": 1, "max_games": 30},
-    #     wandb_mode
-    # )
-    # train(run_settings)
+    run_settings = RunSettings(
+        "initial-test-refactor",
+        "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH",
+        {"n_features": 14, "max_games": 2000},
+        wandb_mode
+    )
+    train(run_settings)

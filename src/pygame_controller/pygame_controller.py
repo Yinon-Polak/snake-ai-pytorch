@@ -85,7 +85,7 @@ class PygameController:
 class DebugModePygamController:
     def __init__(self, w, h, block_size):
         self.pygame_controller = PygameController(w, h, block_size)
-        self.n_dont_show = 250_000
+        self.n_dont_show = 100_000
         self.n_games = 0
 
     def check_quit_event(self):
