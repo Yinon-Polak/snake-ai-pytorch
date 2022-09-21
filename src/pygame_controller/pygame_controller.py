@@ -80,3 +80,29 @@ class PygameController:
     def clock_tick(self):
         self.clock.tick(SPEED)
 
+
+@zope.interface.implementer(PygameControllerInterface)
+class DebugModePygamController:
+    def __init__(self, w, h, block_size):
+        self.pygame_controller = PygameController(w, h, block_size)
+        self.n_dont_show = 250_000
+        self.n_games = 0
+
+    def check_quit_event(self):
+        if self.n_games < self.n_dont_show:
+            return
+
+        self.pygame_controller.check_quit_event()
+
+    def update_ui(self, food: Point, score: float, snake: List[Point]):
+        self.n_games += 1
+        if self.n_games < self.n_dont_show:
+            return
+
+        self.pygame_controller.update_ui(food, score, snake)
+
+    def clock_tick(self):
+        if self.n_games < self.n_dont_show:
+            return
+
+        self.pygame_controller.clock_tick()
