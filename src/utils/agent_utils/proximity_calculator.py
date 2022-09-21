@@ -20,6 +20,8 @@ class ProximityCalculator:
             point_u1: Point,
             point_d1: Point,
     ) -> List[float]:
+        if n_steps == -1:
+            return []
 
         proximity_to_body_vec_0 = self.get_proximity_to_body(game.direction, game.head, game.snake, game.w, game.h)
 
