@@ -33,12 +33,6 @@ DEFAULT_AGENT_KWARGS = {
 }
 
 
-@dataclass
-class StateTuple:
-    model1: torch.tensor
-    model2: torch.tensor
-
-
 class Agent:
 
     def __init__(self, game: SnakeGameAI, **kwargs):
@@ -81,13 +75,9 @@ class Agent:
 
         self.last_scores = deque(maxlen=500)
 
-        with self.get_state(game) as state_tuple:
-            self.model1_features = len(state_tuple.model1)
-            self.model2_features = len(state_tuple.model2)
-            self.n_features = self.model1_features + self.model2_features
-
-        self.model1 = Linear_QNet(input_size=self.model1_features, hidden_size=self.model_hidden_size_l1, output_size=3)
-        self.model2 = Linear_QNet(input_size=self.model2_features, hidden_size=self.model_hidden_size_l1, output_size=3)
+        self.n_features = len(self.get_state(game))
+        self.model1 = Linear_QNet(input_size=20, hidden_size=self.model_hidden_size_l1, output_size=3)
+        self.model2 = Linear_QNet(input_size=21, hidden_size=self.model_hidden_size_l1, output_size=3)
         self.ensmble_model = Ensemble(self.model1, self.model2, hidden_size=self.model_hidden_size_l1, output_size=3)
         self.trainer = QTrainer(model1=self.model1, ensmble=self.ensmble_model, lr=self.lr, gamma=self.gamma)
 
@@ -264,9 +254,6 @@ class Agent:
         )
 
         state = [
-            # # distance to body
-            # *proximities_vec,
-
             # is collision
             *collisions_vec,
 
@@ -281,9 +268,12 @@ class Agent:
             game.food.x > game.head.x,  # food right
             game.food.y < game.head.y,  # food up
             game.food.y > game.head.y,  # food down
+
+            # distance to body
+            *proximities_vec,
         ]
 
-        return StateTuple(torch.tensor(state, dtype=torch.float), torch.tensor(proximities_vec, dtype=torch.float))
+        return torch.tensor(state, dtype=torch.float)
 
     def remember(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))  # popleft if MAX_MEMORY is reached
@@ -328,8 +318,8 @@ class Agent:
             move = random.randint(0, 2)
             final_move[move] = 1
         else:
-            state0 = torch.tensor(state, dtype=torch.float)
-            second_last_layer, pred = self.trainer.model(state0)
+            state0 = state.float()
+            second_last_layer, pred = self.trainer.model_wrapper(state0)
             move = torch.argmax(pred).item()
             final_move[move] = 1
 
@@ -456,10 +446,10 @@ if __name__ == '__main__':
 
     rs = RunSettings(
         "ensmble-iter=500",
-        "reporduce-base-line",
+        "",
         {
             'n_steps_collision_check': 1,
-            'n_steps_proximity_check': 0,
+            'n_steps_proximity_check': 1,
         },
         wandb_mode
     )
