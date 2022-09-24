@@ -1,4 +1,7 @@
 import dataclasses
+import logging
+import multiprocessing
+import threading
 from dataclasses import dataclass
 
 import torch
@@ -28,7 +31,7 @@ DEFAULT_AGENT_KWARGS = {
     'max_update_steps': 0,
     'collision_types': [CollisionType.BOTH],
     'model_hidden_size_l1': 256,
-    'n_steps_proximity_check': 0
+    'n_steps_proximity_check': -1
 }
 
 
@@ -332,42 +335,53 @@ class RunSettings:
     agent_kwargs: dict
     wandb_mode: str
     wandb_setttings: Optional[wandb.Settings] = None
-    index: Optional[int] = None
+    index: Optional[int] = 0
 
     def generate_instances(self, n: int):
         return [dataclasses.replace(self, index=i) for i in range(n)]
 
 
-def train(run_settings: RunSettings):
+def train(run_settings: Optional[RunSettings] = None):
+    game = SnakeGameAI()
+
+
+    if not run_settings:
+        wandb.init(project='initial-sweeps-10')
+        agent = Agent(game, **wandb.config)
+
+    else:
+        agent = Agent(game, **run_settings.agent_kwargs)
+        wandb.init(
+            reinit=True,
+            project='reproduce-failed-runs',
+            group=run_settings.group,
+            name=str(run_settings.index),
+            notes=run_settings.note,
+            config={
+                "architecture": "Linear_QNet",
+                "learning_rate": agent.lr,
+                "batch_size": agent.batch_size,
+                "max_memory": agent.max_memory,
+                "gamma": agent.gamma,
+            },
+            settings=run_settings.wandb_setttings,
+            mode=wandb_mode,
+        )
+
     total_score = 0
     record = 0
-    game = SnakeGameAI()
-    agent = Agent(game, **run_settings.agent_kwargs)
 
-    wandb.init(
-        reinit=True,
-        project='test-automatic-n-features-setting-0',
-        group=run_settings.group,
-        name=str(run_settings.index),
-        notes=run_settings.note,
-        config={
-            "architecture": "Linear_QNet",
-            "learning_rate": agent.lr,
-            "batch_size": agent.batch_size,
-            "max_memory": agent.max_memory,
-            "gamma": agent.gamma,
-        },
-        settings=run_settings.wandb_setttings,
-        mode=wandb_mode,
-    )
-
-    try:
-        wandb.bwatch(agent.model)
-    except Exception as e:
-        print(e)
-        wandb.watch(agent.model)
-
+    # try:
+    #     wandb.bwatch(agent.model)
+    # except Exception as e:
+    #     print(e)
+    #     wandb.watch(agent.model)
+    mean_score  = 0
     while agent.n_games < agent.max_games:
+        if agent.n_games > 350 and mean_score < 1:
+            logging.info("breaking learning loop, agent.n_games > 350 and mean_score < 1")
+            break
+
         # get old state
         state_old = agent.get_state(game)
 
@@ -394,13 +408,13 @@ def train(run_settings: RunSettings):
                 record = score
                 agent.model.save()
 
-            print('Game', agent.n_games, 'Score', score, 'Record:', record)
 
             total_score += score
             agent.last_scores.append(score)
             ma = sum(agent.last_scores) / len(agent.last_scores)
             mean_score = total_score / agent.n_games
 
+            logging.info('Game', agent.n_games, 'Score', score, 'mean_score', mean_score, 'Record:', record)
             # weights and baises logging
             wandb.log({
                 'score': score,
@@ -408,12 +422,12 @@ def train(run_settings: RunSettings):
                 'ma_500_score': ma,
             })
 
-    wandb.finish()
+    # wandb.finish()
 
 
 if __name__ == '__main__':
-    wandb_mode = "disabled"
-    # wandb_mode = "online"
+    # wandb_mode = "disabled"
+    wandb_mode = "online"
 
     # n = 5
     # single_runs_settings = [
@@ -434,9 +448,45 @@ if __name__ == '__main__':
     #     print(p.map(train, multiple_runs_settings))
 
     run_settings = RunSettings(
-        "initial-test-refactor",
-        "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH",
-        {"max_games": 2000},
+        "n_steps_proximity_check=0 ; n_steps_collision_check=1",
+        "reporduce-base-line",
+        {
+            'n_steps_collision_check': 1,
+            'n_steps_proximity_check': 0,
+        },
         wandb_mode
     )
     train(run_settings)
+
+
+    # params = {
+    #     'max_games': {'values': [2000]},
+    #     'epsilon': {'values': [0]},
+    #     'gamma': {'values': [0.9]},
+    #     'lr': {'values': [0.001]},
+    #     'batch_size': {'values': [1_000]},
+    #     'max_memory': {'values': [100_000]},
+    #     'n_steps_collision_check': {'values': [0, 1, 2, 4, 8]},
+    #     'max_update_steps': {'values': [0, 10, 30, 90, 270]},
+    #     'collision_types': {'values': [[CollisionType.BOTH], [CollisionType.BODY, CollisionType.BORDER]]},
+    #     'model_hidden_size_l1': {'values': [128, 256, 512, 1024]},
+    # }
+    #
+    # method = "random"
+    #
+    # sweep_config = {
+    #     'method': method,
+    #     'metric': {
+    #         'name': 'mean_score',
+    #         'goal': 'maximize'
+    #     },
+    #     'parameters': params,
+    #     'early_terminate':  {
+    #         'type': 'hyperband',
+    #         'min_iter': 1200,
+    #         'eta': 100,
+    #     }
+    # }
+    #
+    # sweep_id = wandb.sweep(sweep_config)
+    # wandb.agent(sweep_id, function=train)
