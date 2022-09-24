@@ -1,18 +1,16 @@
 import dataclasses
 import logging
-import multiprocessing
-import threading
 from dataclasses import dataclass
 
 import torch
 import random
 import numpy as np
 from collections import deque
-from typing import Tuple, List, Optional, Deque
+from typing import Tuple, List, Optional
 
 from src.collision_type import CollisionType
 from src.game import SnakeGameAI, Direction, Point, BLOCK_SIZE, head_to_global_direction
-from src.model import Linear_QNet, QTrainer
+from src.model import Linear_QNet, QTrainer, Ensemble
 
 import wandb
 
@@ -33,6 +31,12 @@ DEFAULT_AGENT_KWARGS = {
     'model_hidden_size_l1': 256,
     'n_steps_proximity_check': -1
 }
+
+
+@dataclass
+class StateTuple:
+    model1: torch.tensor
+    model2: torch.tensor
 
 
 class Agent:
@@ -77,9 +81,15 @@ class Agent:
 
         self.last_scores = deque(maxlen=500)
 
-        self.n_features = len(self.get_state(game))
-        self.model = Linear_QNet(input_size=self.n_features, hidden_size=self.model_hidden_size_l1, output_size=3)
-        self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma)
+        with self.get_state(game) as state_tuple:
+            self.model1_features = len(state_tuple.model1)
+            self.model2_features = len(state_tuple.model2)
+            self.n_features = self.model1_features + self.model2_features
+
+        self.model1 = Linear_QNet(input_size=self.model1_features, hidden_size=self.model_hidden_size_l1, output_size=3)
+        self.model2 = Linear_QNet(input_size=self.model2_features, hidden_size=self.model_hidden_size_l1, output_size=3)
+        self.ensmble_model = Ensemble(self.model1, self.model2, hidden_size=self.model_hidden_size_l1, output_size=3)
+        self.trainer = QTrainer(model1=self.model1, ensmble=self.ensmble_model, lr=self.lr, gamma=self.gamma)
 
     @staticmethod
     def get_sorounding_points(point: Point, c: int = 1) -> Tuple[Point, Point, Point, Point]:
@@ -206,7 +216,6 @@ class Agent:
 
         return [*collisions_vec_dist_0, *flatten(collisions_vec_ahead)]
 
-
     def clac_collision_vec_by_type(
             self,
             game: SnakeGameAI,
@@ -225,7 +234,7 @@ class Agent:
                 point_r1,
                 point_u1,
                 point_d1,
-                self.n_steps_collision_check
+                n_steps
             ) for collision_type in collision_types
         ]
 
@@ -248,15 +257,15 @@ class Agent:
         )
 
         # distance to body
-        distance_to_body_vec = ProximityCalculator().calc_proximity(
+        proximities_vec = ProximityCalculator().calc_proximity(
             game,
             self.n_steps_proximity_check,
             point_l1, point_r1, point_u1, point_d1,
         )
 
         state = [
-            # distance to body
-            *distance_to_body_vec,
+            # # distance to body
+            # *proximities_vec,
 
             # is collision
             *collisions_vec,
@@ -274,7 +283,7 @@ class Agent:
             game.food.y > game.head.y,  # food down
         ]
 
-        return torch.tensor(state, dtype=torch.float)
+        return StateTuple(torch.tensor(state, dtype=torch.float), torch.tensor(proximities_vec, dtype=torch.float))
 
     def remember(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))  # popleft if MAX_MEMORY is reached
@@ -320,12 +329,11 @@ class Agent:
             final_move[move] = 1
         else:
             state0 = torch.tensor(state, dtype=torch.float)
-            prediction = self.model(state0)
-            move = torch.argmax(prediction).item()
+            second_last_layer, pred = self.trainer.model(state0)
+            move = torch.argmax(pred).item()
             final_move[move] = 1
 
         return final_move
-
 
 
 @dataclass
@@ -343,7 +351,6 @@ class RunSettings:
 
 def train(run_settings: Optional[RunSettings] = None):
     game = SnakeGameAI()
-
 
     if not run_settings:
         wandb.init(project='initial-sweeps-10')
@@ -376,7 +383,7 @@ def train(run_settings: Optional[RunSettings] = None):
     # except Exception as e:
     #     print(e)
     #     wandb.watch(agent.model)
-    mean_score  = 0
+    mean_score = 0
     while agent.n_games < agent.max_games:
         if agent.n_games > 350 and mean_score < 1:
             logging.info("breaking learning loop, agent.n_games > 350 and mean_score < 1")
@@ -402,12 +409,12 @@ def train(run_settings: Optional[RunSettings] = None):
             # train long memory
             game.reset()
             agent.n_games += 1
+            agent.trainer.increment_n_games()
             agent.train_long_memory(game, reward)
 
             if score > record:
                 record = score
-                agent.model.save()
-
+                agent.trainer.model.save()
 
             total_score += score
             agent.last_scores.append(score)
@@ -447,8 +454,8 @@ if __name__ == '__main__':
     # with Pool(2) as p:
     #     print(p.map(train, multiple_runs_settings))
 
-    run_settings = RunSettings(
-        "n_steps_proximity_check=0 ; n_steps_collision_check=1",
+    rs = RunSettings(
+        "ensmble-iter=500",
         "reporduce-base-line",
         {
             'n_steps_collision_check': 1,
@@ -456,8 +463,7 @@ if __name__ == '__main__':
         },
         wandb_mode
     )
-    train(run_settings)
-
+    train(rs)
 
     # params = {
     #     'max_games': {'values': [2000]},

@@ -33,7 +33,7 @@ class ProximityCalculator:
                 game=game,
                 turn=turn,
                 n_steps=n_steps,
-                calc_border=False,
+                calc_border=True,
                 point_l1=point_l1,
                 point_r1=point_r1,
                 point_u1=point_u1,
@@ -42,6 +42,7 @@ class ProximityCalculator:
         ]
         return [*proximity_to_body_vec_0, *flatten(proximity_vec_ahead)]
 
+    # todo check if need to subtract 20
     @staticmethod
     def get_proximity_to_border(point: Point, direction: Direction, w, h) -> float:
         if direction == Direction.RIGHT:
@@ -160,8 +161,8 @@ class ProximityCalculator:
             if calc_border:
                 border_proximity_v = self.get_proximity_to_border_in_snake_view(point_ahead, some_direction, game.w,
                                                                                 game.h)
-                border_proximity_v = [min(border_proximity_i, body_proximity_v[i]) for i, border_proximity_i in
-                                      enumerate(border_proximity_v)]
+                # border_proximity_v = [min(border_proximity_i, body_proximity_v[i]) for i, border_proximity_i in
+                #                       enumerate(border_proximity_v)]
                 collisions_distances_vectors.append(border_proximity_v)
 
         return flatten(collisions_distances_vectors)
