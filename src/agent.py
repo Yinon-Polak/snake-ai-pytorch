@@ -362,7 +362,7 @@ def train(run_settings: Optional[RunSettings] = None):
                 "gamma": agent.gamma,
             },
             settings=run_settings.wandb_setttings,
-            mode=wandb_mode,
+            mode=run_settings.wandb_mode,
         )
 
     total_score = 0
