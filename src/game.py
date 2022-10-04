@@ -22,6 +22,7 @@ class SnakeGameAI:
         self.negative_reward = negative_reward
         self.w = w
         self.h = h
+        self.n_blocks = (self.w / 20) * (self.h / 20)
         self.pygame_controller = PygameController(self.w, self.h, BLOCK_SIZE) if use_pygame else DummyPygamController()
 
         #### vars that's are defined in reset()

@@ -22,16 +22,18 @@ from src.utils.utils import flatten
 DEFAULT_AGENT_KWARGS = {
     'n_features': 11,
     'max_games': 2000,
-    'epsilon': 0,
     'gamma': 0.9,
     'lr': 0.001,
     'batch_size': 1_000,
     'max_memory': 100_000,
     'n_steps_collision_check': 0,
-    'max_update_steps': 0,
     'collision_types': [CollisionType.BOTH],
     'model_hidden_size_l1': 256,
-    'n_steps_proximity_check': -1
+    'n_steps_proximity_check': -1,
+    'starting_epsilon': 80,
+    'n_games_exploration': 200,
+    'max_update_end_steps': 0,
+    'max_update_start_steps': 0,
 }
 
 
@@ -61,17 +63,19 @@ class Agent:
         self.n_games: int = 0
         # self.n_features: int = kwargs["n_features"]
         self.max_games: int = kwargs['max_games']
-        self.epsilon: int = kwargs['epsilon']
         self.gamma: float = kwargs['gamma']
         self.lr: float = kwargs['lr']
         self.batch_size: int = kwargs['batch_size']
         self.max_memory: int = kwargs['max_memory']
         self.n_steps_collision_check: int = kwargs['n_steps_collision_check']
-        self.max_update_steps: int = kwargs['max_update_steps']
         self.collision_types: List[CollisionType] = kwargs['collision_types']
         self.model_hidden_size_l1: int = kwargs['model_hidden_size_l1']
         # self.non_zero_memory: Deque[int] = kwargs.get('non_zero_memory', deque(maxlen=self.max_memory))
         self.n_steps_proximity_check: int = kwargs['n_steps_proximity_check']
+        self.n_games_exploration: int = kwargs['n_games_exploration']
+        self.starting_epsilon: int = kwargs['starting_epsilon']  # self.n_games_exploration
+        self.max_update_end_steps: int = kwargs['max_update_end_steps']
+        self.max_update_start_steps: int = kwargs['max_update_start_steps']
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
 
@@ -254,7 +258,12 @@ class Agent:
             point_l1, point_r1, point_u1, point_d1,
         )
 
+        snake_len = len(game.snake)
+
         state = [
+            # snake_len == 1,
+            # snake_len / game.n_blocks,
+
             # distance to body
             *distance_to_body_vec,
 
@@ -267,7 +276,7 @@ class Agent:
             dir_u,
             dir_d,
 
-            # Food location 
+            # Food location
             game.food.x < game.head.x,  # food left
             game.food.x > game.head.x,  # food right
             game.food.y < game.head.y,  # food up
@@ -283,7 +292,7 @@ class Agent:
     #     self.non_zero_memory.append((state, action, reward, next_state, done)) # popleft if MAX_MEMORY is reached
 
     def train_long_memory(self, game: SnakeGameAI, reward):
-        if self.max_update_steps > 0:
+        if self.max_update_end_steps > 0 or self.max_update_start_steps > 0:
             self._update_rewards(game, reward)
 
         if len(self.memory) > self.batch_size:
@@ -300,11 +309,12 @@ class Agent:
         self.trainer.train_step(state, action, reward, next_state, done)
 
     def _update_rewards(self, game: SnakeGameAI, last_reward: int):
-        n_change = min(len(game.snake), self.max_update_steps)
+        len_snake = len(game.snake)
         last_records = []
-        for _ in range(n_change):
+        for i in range(len_snake):
             (state, action, reward, next_state, done) = self.memory.pop()
-            reward = last_reward  # reward
+            if i < self.max_update_start_steps or i > (len_snake - self.max_update_end_steps):
+                reward = last_reward  # reward
             last_records.insert(0, (state, action, reward, next_state, done))
             # self.remember_no_zero(state, action, reward, next_state, done)
 
@@ -313,9 +323,9 @@ class Agent:
 
     def get_action(self, state):
         # random moves: tradeoff exploration / exploitation
-        self.epsilon = 80 - self.n_games
         final_move = [0, 0, 0]
-        if random.randint(0, 200) < self.epsilon:
+        epsilon = self.starting_epsilon - self.n_games
+        if epsilon > 0 and random.randint(0, self.n_games_exploration) < epsilon:
             move = random.randint(0, 2)
             final_move[move] = 1
         else:
@@ -365,7 +375,7 @@ def train(run_settings: Optional[RunSettings] = None):
                 "gamma": agent.gamma,
             },
             settings=run_settings.wandb_setttings,
-            mode=wandb_mode,
+            mode=run_settings.wandb_mode,
         )
 
     total_score = 0
@@ -448,7 +458,7 @@ if __name__ == '__main__':
     #     print(p.map(train, multiple_runs_settings))
 
     run_settings = RunSettings(
-        "n_steps_proximity_check=0 ; n_steps_collision_check=1",
+        "refactor epsilon ; n_steps_proximity_check=0 ; n_steps_collision_check=1",
         "reporduce-base-line",
         {
             'n_steps_collision_check': 1,
