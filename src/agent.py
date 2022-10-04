@@ -448,11 +448,11 @@ if __name__ == '__main__':
     #     print(p.map(train, multiple_runs_settings))
 
     run_settings = RunSettings(
-        "n_steps_proximity_check=0 ; n_steps_collision_check=1",
-        "reporduce-base-line",
+        "milestone-3 ; n_steps_proximity_check=-1 ; n_steps_collision_check=1",
+        "reproduce-base-line",
         {
             'n_steps_collision_check': 1,
-            'n_steps_proximity_check': 0,
+            'n_steps_proximity_check': -1,
         },
         wandb_mode
     )
