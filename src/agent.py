@@ -21,7 +21,7 @@ from src.utils.utils import flatten
 
 DEFAULT_AGENT_KWARGS = {
     'n_features': 11,
-    'max_games': 2000,
+    'max_games': 4000,
     'gamma': 0.9,
     'lr': 0.001,
     'batch_size': 1_000,
@@ -31,7 +31,7 @@ DEFAULT_AGENT_KWARGS = {
     'model_hidden_size_l1': 256,
     'n_steps_proximity_check': -1,
     'starting_epsilon': 80,
-    'n_games_exploration': 200,
+    'random_scale': 200,
     'max_update_end_steps': 0,
     'max_update_start_steps': 0,
 }
@@ -72,14 +72,14 @@ class Agent:
         self.model_hidden_size_l1: int = kwargs['model_hidden_size_l1']
         # self.non_zero_memory: Deque[int] = kwargs.get('non_zero_memory', deque(maxlen=self.max_memory))
         self.n_steps_proximity_check: int = kwargs['n_steps_proximity_check']
-        self.n_games_exploration: int = kwargs['n_games_exploration']
+        self.random_scale: int = kwargs['random_scale']
         self.starting_epsilon: int = kwargs['starting_epsilon']  # self.n_games_exploration
         self.max_update_end_steps: int = kwargs['max_update_end_steps']
         self.max_update_start_steps: int = kwargs['max_update_start_steps']
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
 
-        self.last_scores = deque(maxlen=500)
+        self.last_scores = deque(maxlen=1000)
 
         self.n_features = len(self.get_state(game))
         self.model = Linear_QNet(input_size=self.n_features, hidden_size=self.model_hidden_size_l1, output_size=3)
@@ -261,8 +261,9 @@ class Agent:
         snake_len = len(game.snake)
 
         state = [
-            # snake_len == 1,
-            # snake_len / game.n_blocks,
+            len(game.last_trail) == 0,
+            len(game.last_trail) / game.n_blocks,
+            snake_len / game.n_blocks,
 
             # distance to body
             *distance_to_body_vec,
@@ -325,7 +326,7 @@ class Agent:
         # random moves: tradeoff exploration / exploitation
         final_move = [0, 0, 0]
         epsilon = self.starting_epsilon - self.n_games
-        if epsilon > 0 and random.randint(0, self.n_games_exploration) < epsilon:
+        if epsilon > 0 and random.randint(0, self.random_scale) < epsilon:
             move = random.randint(0, 2)
             final_move[move] = 1
         else:
@@ -363,7 +364,7 @@ def train(run_settings: Optional[RunSettings] = None):
         agent = Agent(game, **run_settings.agent_kwargs)
         wandb.init(
             reinit=True,
-            project='reproduce-failed-runs',
+            project='optimize exploration',
             group=run_settings.group,
             name=str(run_settings.index),
             notes=run_settings.note,
@@ -386,10 +387,11 @@ def train(run_settings: Optional[RunSettings] = None):
     # except Exception as e:
     #     print(e)
     #     wandb.watch(agent.model)
-    mean_score  = 0
+    min_iter_no_learning = 1200
+    mean_score = 0
     while agent.n_games < agent.max_games:
-        if agent.n_games > 350 and mean_score < 1:
-            logging.info("breaking learning loop, agent.n_games > 350 and mean_score < 1")
+        if agent.n_games > min_iter_no_learning and mean_score < 1:
+            logging.info(f"breaking learning loop, agent.n_games > {min_iter_no_learning} and mean_score < 1")
             break
 
         # get old state
@@ -429,7 +431,7 @@ def train(run_settings: Optional[RunSettings] = None):
             wandb.log({
                 'score': score,
                 'mean_score': mean_score,
-                'ma_500_score': ma,
+                'ma_1000_score': ma,
             })
 
     # wandb.finish()
@@ -458,11 +460,11 @@ if __name__ == '__main__':
     #     print(p.map(train, multiple_runs_settings))
 
     run_settings = RunSettings(
-        "refactor epsilon ; n_steps_proximity_check=0 ; n_steps_collision_check=1",
-        "reporduce-base-line",
+        "add is new move",
+        "len snake-len, is-new-move, last-trail-len",
         {
             'n_steps_collision_check': 1,
-            'n_steps_proximity_check': 0,
+            'n_steps_proximity_check': -1,
         },
         wandb_mode
     )
