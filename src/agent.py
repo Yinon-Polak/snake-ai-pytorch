@@ -310,16 +310,20 @@ class Agent:
         self.trainer.train_step(state, action, reward, next_state, done)
 
     def _update_rewards(self, game: SnakeGameAI, last_reward: int):
-        len_snake = len(game.snake)
+        len_last_trail = len(game.last_trail)
         last_records = []
-        for i in range(len_snake):
-            (state, action, reward, next_state, done) = self.memory.pop()
-            if i < self.max_update_start_steps or i > (len_snake - self.max_update_end_steps):
+        for _ in range(len_last_trail):
+            last_records.insert(0, self.memory.pop())
+
+        modified_last_record = []
+        for i, record in enumerate(last_records):
+            (state, action, reward, next_state, done) = record
+            if i < self.max_update_start_steps or i >= (len_last_trail - self.max_update_end_steps):
                 reward = last_reward  # reward
-            last_records.insert(0, (state, action, reward, next_state, done))
+            modified_last_record.append((state, action, reward, next_state, done))
             # self.remember_no_zero(state, action, reward, next_state, done)
 
-        for record in last_records:
+        for record in modified_last_record:
             self.memory.append(record)
 
     def get_action(self, state):
