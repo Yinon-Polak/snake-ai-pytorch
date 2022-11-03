@@ -34,6 +34,7 @@ DEFAULT_AGENT_KWARGS = {
     'random_scale': 200,
     'max_update_end_steps': 0,
     'max_update_start_steps': 0,
+    'convert_proximity_to_bool': False,
 }
 
 
@@ -78,6 +79,7 @@ class Agent:
         self.starting_epsilon: int = kwargs['starting_epsilon']  # self.n_games_exploration
         self.max_update_end_steps: int = kwargs['max_update_end_steps']
         self.max_update_start_steps: int = kwargs['max_update_start_steps']
+        self.convert_proximity_to_bool: bool = kwargs['convert_proximity_to_bool']
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
 
@@ -189,6 +191,10 @@ class Agent:
             point_d1: Point,
             n_steps: int,
     ) -> List[bool]:
+
+        if n_steps == -1:
+            return []
+
         collisions_vec_dist_0 = self.is_collisions(game,
                                                    direction=game.direction,
                                                    collision_type=collision_type,
@@ -259,6 +265,9 @@ class Agent:
             self.n_steps_proximity_check,
             point_l1, point_r1, point_u1, point_d1,
         )
+
+        if self.convert_proximity_to_bool:
+            distance_to_body_vec = [prox < 1 for prox in distance_to_body_vec]
 
         snake_len = len(game.snake)
 
