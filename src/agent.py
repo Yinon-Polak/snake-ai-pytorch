@@ -60,6 +60,8 @@ class Agent:
         else:
             kwargs = DEFAULT_AGENT_KWARGS
 
+        self.k = kwargs
+
         self.n_games: int = 0
         # self.n_features: int = kwargs["n_features"]
         self.max_games: int = kwargs['max_games']
@@ -359,10 +361,10 @@ class RunSettings:
 def train(run_settings: Optional[RunSettings] = None):
     game = SnakeGameAI()
 
-
     if not run_settings:
         wandb.init(project='initial-sweeps-10')
         agent = Agent(game, **wandb.config)
+        # wandb.config(agent.k)
 
     else:
         agent = Agent(game, **run_settings.agent_kwargs)
@@ -372,13 +374,7 @@ def train(run_settings: Optional[RunSettings] = None):
             group=run_settings.group,
             name=str(run_settings.index),
             notes=run_settings.note,
-            config={
-                "architecture": "Linear_QNet",
-                "learning_rate": agent.lr,
-                "batch_size": agent.batch_size,
-                "max_memory": agent.max_memory,
-                "gamma": agent.gamma,
-            },
+            config=agent.k,
             settings=run_settings.wandb_setttings,
             mode=run_settings.wandb_mode,
         )
