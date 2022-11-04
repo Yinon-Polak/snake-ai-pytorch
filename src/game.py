@@ -84,7 +84,7 @@ class SnakeGameAI:
             self.score += 1
             reward = self.positive_reward
             self._place_food()
-            self.last_trail.clear()
+            # self.last_trail.clear()  # todo make sure this is being cleared
         else:
             crumb = self.snake.pop()
             self.trail.insert(0, crumb)

@@ -88,6 +88,7 @@ class Agent:
         self.n_features = len(self.get_state(game))
         self.model = Linear_QNet(input_size=self.n_features, hidden_size=self.model_hidden_size_l1, output_size=3)
         self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma)
+        self.should_update_rewards = self.max_update_start_steps > 0 or self.max_update_end_steps > 0
 
     @staticmethod
     def get_sorounding_points(point: Point, c: int = 1) -> Tuple[Point, Point, Point, Point]:
@@ -304,8 +305,13 @@ class Agent:
     #     self.non_zero_memory.append((state, action, reward, next_state, done)) # popleft if MAX_MEMORY is reached
 
     def train_long_memory(self, game: SnakeGameAI, reward):
-        if self.max_update_end_steps > 0 or self.max_update_start_steps > 0:
-            self._update_rewards(game, reward)
+        if self.should_update_rewards:
+            updated_records = self._update_rewards(game, reward, return_updated_records=True)
+            self.trainer.reset_state_to_last_checkpoint()
+
+            # retrain with updated rewards
+            for state, action, reward, next_state, done in updated_records:
+                self.trainer.train_step(state, action, reward, next_state, done)
 
         if len(self.memory) > self.batch_size:
             mini_sample = random.sample(self.memory, self.batch_size)  # list of tuples
@@ -314,13 +320,14 @@ class Agent:
 
         states, actions, rewards, next_states, dones = zip(*mini_sample)
         self.trainer.train_step(states, actions, rewards, next_states, dones)
-        # for state, action, reward, nexrt_state, done in mini_sample:
-        #    self.trainer.train_step(state, action, reward, next_state, done)
+
+        if self.should_update_rewards:
+            self.trainer.save_state_checkpoint()
 
     def train_short_memory(self, state, action, reward, next_state, done):
         self.trainer.train_step(state, action, reward, next_state, done)
 
-    def _update_rewards(self, game: SnakeGameAI, last_reward: int):
+    def _update_rewards(self, game: SnakeGameAI, last_reward: int, return_updated_records):
         len_last_trail = len(game.last_trail)
         last_records = []
         for _ in range(len_last_trail):
@@ -336,6 +343,9 @@ class Agent:
 
         for record in modified_last_record:
             self.memory.append(record)
+
+        if return_updated_records:
+            return modified_last_record
 
     def get_action(self, state):
         # random moves: tradeoff exploration / exploitation
@@ -371,7 +381,7 @@ def train(run_settings: Optional[RunSettings] = None):
     game = SnakeGameAI()
 
     if not run_settings:
-        wandb.init(project='initial-sweeps-10')
+        wandb.init()
         agent = Agent(game, **wandb.config)
         # wandb.config(agent.k)
 
@@ -379,7 +389,7 @@ def train(run_settings: Optional[RunSettings] = None):
         agent = Agent(game, **run_settings.agent_kwargs)
         wandb.init(
             reinit=True,
-            project='optimize exploration',
+            project='optimize update steps',
             group=run_settings.group,
             name=str(run_settings.index),
             notes=run_settings.note,
@@ -396,7 +406,7 @@ def train(run_settings: Optional[RunSettings] = None):
     # except Exception as e:
     #     print(e)
     #     wandb.watch(agent.model)
-    min_iter_no_learning = 1200
+    min_iter_no_learning = 200
     mean_score = 0
     while agent.n_games < agent.max_games:
         if agent.n_games > min_iter_no_learning and mean_score < 1:
@@ -421,13 +431,13 @@ def train(run_settings: Optional[RunSettings] = None):
 
         if done:
             # train long memory
-            game.reset()
             agent.n_games += 1
             agent.train_long_memory(game, reward)
+            game.reset()
 
             if score > record:
                 record = score
-                agent.model.save()
+                agent.model.save('best.pth')
 
 
             total_score += score
@@ -450,34 +460,239 @@ if __name__ == '__main__':
     # wandb_mode = "disabled"
     wandb_mode = "online"
 
-    # n = 5
-    # single_runs_settings = [
-    #     RunSettings(
-    #         "initial-test-refactor",
-    #         "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH",
-    #         {"n_features": 14, "max_games": 30},
-    #         wandb_mode
-    #     )
-    # ]
-    #
-    # multiple_runs_settings = flatten([run_settings.generate_instances(n=n) for run_settings in single_runs_settings])
-    #
-    #
+    n = 2
+    runs_settings = [
+        RunSettings(
+            "max_update_start_steps=0 ; max_update_end_steps=0",
+            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=0 ; max_update_end_steps=0 ; convert_proximity_to_bool=True",
+            {
+                "n_steps_collision_check": 0,
+                "n_steps_proximity_check": 0,
+                "max_update_start_steps": 0,
+                "max_update_end_steps": 0,
+                "convert_proximity_to_bool": True,
+            },
+            wandb_mode
+        ),
+
+        RunSettings(
+            "max_update_start_steps=0 ; max_update_end_steps=1",
+            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=0 ; max_update_end_steps=1 ; convert_proximity_to_bool=True",
+            {
+                "n_steps_collision_check": 0,
+                "n_steps_proximity_check": 0,
+                "max_update_start_steps": 0,
+                "max_update_end_steps": 1,
+                "convert_proximity_to_bool": True,
+            },
+            wandb_mode
+        ),
+
+        RunSettings(
+            "max_update_start_steps=0 ; max_update_end_steps=10",
+            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=0 ; max_update_end_steps=10 ; convert_proximity_to_bool=True",
+            {
+                "n_steps_collision_check": 0,
+                "n_steps_proximity_check": 0,
+                "max_update_start_steps": 0,
+                "max_update_end_steps": 10,
+                "convert_proximity_to_bool": True,
+            },
+            wandb_mode
+        ),
+
+        RunSettings(
+            "max_update_start_steps=0 ; max_update_end_steps=20",
+            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=0 ; max_update_end_steps=20 ; convert_proximity_to_bool=True",
+            {
+                "n_steps_collision_check": 0,
+                "n_steps_proximity_check": 0,
+                "max_update_start_steps": 0,
+                "max_update_end_steps": 20,
+                "convert_proximity_to_bool": True,
+            },
+            wandb_mode
+        ),
+
+        RunSettings(
+            "max_update_start_steps=1 ; max_update_end_steps=0",
+            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=1 ; max_update_end_steps=0 ; convert_proximity_to_bool=True",
+            {
+                "n_steps_collision_check": 0,
+                "n_steps_proximity_check": 0,
+                "max_update_start_steps": 1,
+                "max_update_end_steps": 0,
+                "convert_proximity_to_bool": True,
+            },
+            wandb_mode
+        ),
+
+        RunSettings(
+            "max_update_start_steps=1 ; max_update_end_steps=1",
+            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=1 ; max_update_end_steps=1 ; convert_proximity_to_bool=True",
+            {
+                "n_steps_collision_check": 0,
+                "n_steps_proximity_check": 0,
+                "max_update_start_steps": 1,
+                "max_update_end_steps": 1,
+                "convert_proximity_to_bool": True,
+            },
+            wandb_mode
+        ),
+
+        RunSettings(
+            "max_update_start_steps=1 ; max_update_end_steps=10",
+            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=1 ; max_update_end_steps=10 ; convert_proximity_to_bool=True",
+            {
+                "n_steps_collision_check": 0,
+                "n_steps_proximity_check": 0,
+                "max_update_start_steps": 1,
+                "max_update_end_steps": 10,
+                "convert_proximity_to_bool": True,
+            },
+            wandb_mode
+        ),
+
+        RunSettings(
+            "max_update_start_steps=1 ; max_update_end_steps=20",
+            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=1 ; max_update_end_steps=20 ; convert_proximity_to_bool=True",
+            {
+                "n_steps_collision_check": 0,
+                "n_steps_proximity_check": 0,
+                "max_update_start_steps": 1,
+                "max_update_end_steps": 20,
+                "convert_proximity_to_bool": True,
+            },
+            wandb_mode
+        ),
+
+        RunSettings(
+            "max_update_start_steps=10 ; max_update_end_steps=0",
+            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=10 ; max_update_end_steps=0 ; convert_proximity_to_bool=True",
+            {
+                "n_steps_collision_check": 0,
+                "n_steps_proximity_check": 0,
+                "max_update_start_steps": 10,
+                "max_update_end_steps": 0,
+                "convert_proximity_to_bool": True,
+            },
+            wandb_mode
+        ),
+
+        RunSettings(
+            "max_update_start_steps=10 ; max_update_end_steps=1",
+            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=10 ; max_update_end_steps=1 ; convert_proximity_to_bool=True",
+            {
+                "n_steps_collision_check": 0,
+                "n_steps_proximity_check": 0,
+                "max_update_start_steps": 10,
+                "max_update_end_steps": 1,
+                "convert_proximity_to_bool": True,
+            },
+            wandb_mode
+        ),
+
+        RunSettings(
+            "max_update_start_steps=10 ; max_update_end_steps=10",
+            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=10 ; max_update_end_steps=10 ; convert_proximity_to_bool=True",
+            {
+                "n_steps_collision_check": 0,
+                "n_steps_proximity_check": 0,
+                "max_update_start_steps": 10,
+                "max_update_end_steps": 10,
+                "convert_proximity_to_bool": True,
+            },
+            wandb_mode
+        ),
+
+        RunSettings(
+            "max_update_start_steps=10 ; max_update_end_steps=20",
+            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=10 ; max_update_end_steps=20 ; convert_proximity_to_bool=True",
+            {
+                "n_steps_collision_check": 0,
+                "n_steps_proximity_check": 0,
+                "max_update_start_steps": 10,
+                "max_update_end_steps": 20,
+                "convert_proximity_to_bool": True,
+            },
+            wandb_mode
+        ),
+
+        RunSettings(
+            "max_update_start_steps=20 ; max_update_end_steps=0",
+            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=20 ; max_update_end_steps=0 ; convert_proximity_to_bool=True",
+            {
+                "n_steps_collision_check": 0,
+                "n_steps_proximity_check": 0,
+                "max_update_start_steps": 20,
+                "max_update_end_steps": 0,
+                "convert_proximity_to_bool": True,
+            },
+            wandb_mode
+        ),
+
+        RunSettings(
+            "max_update_start_steps=20 ; max_update_end_steps=1",
+            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=20 ; max_update_end_steps=1 ; convert_proximity_to_bool=True",
+            {
+                "n_steps_collision_check": 0,
+                "n_steps_proximity_check": 0,
+                "max_update_start_steps": 20,
+                "max_update_end_steps": 1,
+                "convert_proximity_to_bool": True,
+            },
+            wandb_mode
+        ),
+
+        RunSettings(
+            "max_update_start_steps=20 ; max_update_end_steps=10",
+            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=20 ; max_update_end_steps=10 ; convert_proximity_to_bool=True",
+            {
+                "n_steps_collision_check": 0,
+                "n_steps_proximity_check": 0,
+                "max_update_start_steps": 20,
+                "max_update_end_steps": 10,
+                "convert_proximity_to_bool": True,
+            },
+            wandb_mode
+        ),
+
+        RunSettings(
+            "max_update_start_steps=20 ; max_update_end_steps=20",
+            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=20 ; max_update_end_steps=20 ; convert_proximity_to_bool=True",
+            {
+                "n_steps_collision_check": 0,
+                "n_steps_proximity_check": 0,
+                "max_update_start_steps": 20,
+                "max_update_end_steps": 20,
+                "convert_proximity_to_bool": True,
+            },
+            wandb_mode
+        ),
+    ]
+
+
     # from multiprocessing import Pool
     #
-    # with Pool(2) as p:
-    #     print(p.map(train, multiple_runs_settings))
+    # with Pool(n) as p:
+    #     print(p.map(train, runs_settings))
 
-    run_settings = RunSettings(
-        "add is new move",
-        "len snake-len, is-new-move, last-trail-len",
-        {
-            'n_steps_collision_check': 1,
-            'n_steps_proximity_check': -1,
-        },
-        wandb_mode
-    )
-    train(run_settings)
+    for rs in runs_settings:
+        train(rs)
+
+    # run_settings = RunSettings(
+    #         "test-0  max_update_start_steps=0 ; max_update_end_steps=1",
+    #         "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=0 ; max_update_end_steps=1 ; convert_proximity_to_bool=True",
+    #         {
+    #             "n_steps_collision_check": 0,
+    #             "n_steps_proximity_check": 0,
+    #             "max_update_start_steps": 0,
+    #             "max_update_end_steps": 1,
+    #             "convert_proximity_to_bool": True,
+    #         },
+    #         wandb_mode
+    # )
+    # train(run_settings)
 
 
     # params = {
