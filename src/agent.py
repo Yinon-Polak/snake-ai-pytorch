@@ -34,6 +34,7 @@ DEFAULT_AGENT_KWARGS = {
     'random_scale': 200,
     'max_update_end_steps': 0,
     'max_update_start_steps': 0,
+    'min_len_snake_at_update': 0,
     'convert_proximity_to_bool': False,
 }
 
@@ -80,6 +81,7 @@ class Agent:
         self.max_update_end_steps: int = kwargs['max_update_end_steps']
         self.max_update_start_steps: int = kwargs['max_update_start_steps']
         self.convert_proximity_to_bool: bool = kwargs['convert_proximity_to_bool']
+        self.min_len_snake_at_update: int = kwargs['min_len_snake_at_update']
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
 
@@ -305,7 +307,7 @@ class Agent:
     #     self.non_zero_memory.append((state, action, reward, next_state, done)) # popleft if MAX_MEMORY is reached
 
     def train_long_memory(self, game: SnakeGameAI, reward):
-        if self.should_update_rewards:
+        if self.should_update_rewards and len(game.snake) > self.min_len_snake_at_update:
             updated_records = self._update_rewards(game, reward, return_updated_records=True)
             self.trainer.reset_state_to_last_checkpoint()
 
