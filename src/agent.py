@@ -36,6 +36,10 @@ DEFAULT_AGENT_KWARGS = {
     'max_update_start_steps': 0,
     'min_len_snake_at_update': 0,
     'convert_proximity_to_bool': False,
+    'scheduler_step_size': 100_000,
+    'scheduler_gamma': 0.1,
+    'override_proximity_to_bool': True,
+    'init_kaiming_normal': False
 }
 
 
@@ -81,15 +85,21 @@ class Agent:
         self.max_update_end_steps: int = kwargs['max_update_end_steps']
         self.max_update_start_steps: int = kwargs['max_update_start_steps']
         self.convert_proximity_to_bool: bool = kwargs['convert_proximity_to_bool']
+        self.override_proximity_to_bool: bool = kwargs['override_proximity_to_bool']
         self.min_len_snake_at_update: int = kwargs['min_len_snake_at_update']
+        self.scheduler_step_size: int = kwargs['scheduler_step_size']
+        self.scheduler_gamma: int = kwargs['scheduler_gamma']
+
+        self.init_kaiming_normal: bool = kwargs['init_kaiming_normal']
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
 
         self.last_scores = deque(maxlen=1000)
 
         self.n_features = len(self.get_state(game))
-        self.model = Linear_QNet(input_size=self.n_features, hidden_size=self.model_hidden_size_l1, output_size=3)
-        self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma)
+        self.k['n_features'] = self.n_features
+        self.model = Linear_QNet(input_size=self.n_features, hidden_size=self.model_hidden_size_l1, output_size=3, init_kaiming_normal=self.init_kaiming_normal)
+        self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma, scheduler_step_size=self.scheduler_step_size, scheduler_gamma=self.scheduler_gamma)
         self.should_update_rewards = self.max_update_start_steps > 0 or self.max_update_end_steps > 0
 
     @staticmethod
@@ -270,7 +280,11 @@ class Agent:
         )
 
         if self.convert_proximity_to_bool:
-            distance_to_body_vec = [prox < 1 for prox in distance_to_body_vec]
+            if self.override_proximity_to_bool:
+                distance_to_body_vec = [prox < 1 for prox in distance_to_body_vec]
+            else:
+                bool_proximity_vec = [prox < 1 for prox in distance_to_body_vec]
+                distance_to_body_vec.extend(bool_proximity_vec)
 
         snake_len = len(game.snake)
 
@@ -368,6 +382,7 @@ class Agent:
 
 @dataclass
 class RunSettings:
+    project: str
     group: str
     note: str
     agent_kwargs: dict
@@ -391,7 +406,7 @@ def train(run_settings: Optional[RunSettings] = None):
         agent = Agent(game, **run_settings.agent_kwargs)
         wandb.init(
             reinit=True,
-            project='optimize update steps',
+            project=run_settings.project,
             group=run_settings.group,
             name=str(run_settings.index),
             notes=run_settings.note,
@@ -435,6 +450,7 @@ def train(run_settings: Optional[RunSettings] = None):
             # train long memory
             agent.n_games += 1
             agent.train_long_memory(game, reward)
+            agent.trainer.lr_scheduler.step()
             game.reset()
 
             if score > record:
@@ -462,215 +478,67 @@ if __name__ == '__main__':
     # wandb_mode = "disabled"
     wandb_mode = "online"
 
-    n = 2
-    runs_settings = [
+    run_settings = [
         RunSettings(
-            "max_update_start_steps=0 ; max_update_end_steps=0",
-            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=0 ; max_update_end_steps=0 ; convert_proximity_to_bool=True",
-            {
-                "n_steps_collision_check": 0,
-                "n_steps_proximity_check": 0,
-                "max_update_start_steps": 0,
-                "max_update_end_steps": 0,
-                "convert_proximity_to_bool": True,
-            },
-            wandb_mode
+                "lr optimization",
+                "continue ; lr: 0.0001 ; starting_epsilon: 8000 ; random_scale: 20_000",
+                "",
+                {
+                    "max_games": 100_000,
+                    "n_steps_collision_check": 0,
+                    "n_steps_proximity_check": 0,
+                    "convert_proximity_to_bool": True,
+                    "lr": 0.0001,
+                    "starting_epsilon": 8_000,
+                    "random_scale": 20_000
+                },
+                wandb_mode
         ),
-
-        RunSettings(
-            "max_update_start_steps=0 ; max_update_end_steps=1",
-            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=0 ; max_update_end_steps=1 ; convert_proximity_to_bool=True",
-            {
-                "n_steps_collision_check": 0,
-                "n_steps_proximity_check": 0,
-                "max_update_start_steps": 0,
-                "max_update_end_steps": 1,
-                "convert_proximity_to_bool": True,
-            },
-            wandb_mode
-        ),
-
-        RunSettings(
-            "max_update_start_steps=0 ; max_update_end_steps=10",
-            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=0 ; max_update_end_steps=10 ; convert_proximity_to_bool=True",
-            {
-                "n_steps_collision_check": 0,
-                "n_steps_proximity_check": 0,
-                "max_update_start_steps": 0,
-                "max_update_end_steps": 10,
-                "convert_proximity_to_bool": True,
-            },
-            wandb_mode
-        ),
-
-        RunSettings(
-            "max_update_start_steps=0 ; max_update_end_steps=20",
-            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=0 ; max_update_end_steps=20 ; convert_proximity_to_bool=True",
-            {
-                "n_steps_collision_check": 0,
-                "n_steps_proximity_check": 0,
-                "max_update_start_steps": 0,
-                "max_update_end_steps": 20,
-                "convert_proximity_to_bool": True,
-            },
-            wandb_mode
-        ),
-
-        RunSettings(
-            "max_update_start_steps=1 ; max_update_end_steps=0",
-            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=1 ; max_update_end_steps=0 ; convert_proximity_to_bool=True",
-            {
-                "n_steps_collision_check": 0,
-                "n_steps_proximity_check": 0,
-                "max_update_start_steps": 1,
-                "max_update_end_steps": 0,
-                "convert_proximity_to_bool": True,
-            },
-            wandb_mode
-        ),
-
-        RunSettings(
-            "max_update_start_steps=1 ; max_update_end_steps=1",
-            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=1 ; max_update_end_steps=1 ; convert_proximity_to_bool=True",
-            {
-                "n_steps_collision_check": 0,
-                "n_steps_proximity_check": 0,
-                "max_update_start_steps": 1,
-                "max_update_end_steps": 1,
-                "convert_proximity_to_bool": True,
-            },
-            wandb_mode
-        ),
-
-        RunSettings(
-            "max_update_start_steps=1 ; max_update_end_steps=10",
-            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=1 ; max_update_end_steps=10 ; convert_proximity_to_bool=True",
-            {
-                "n_steps_collision_check": 0,
-                "n_steps_proximity_check": 0,
-                "max_update_start_steps": 1,
-                "max_update_end_steps": 10,
-                "convert_proximity_to_bool": True,
-            },
-            wandb_mode
-        ),
-
-        RunSettings(
-            "max_update_start_steps=1 ; max_update_end_steps=20",
-            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=1 ; max_update_end_steps=20 ; convert_proximity_to_bool=True",
-            {
-                "n_steps_collision_check": 0,
-                "n_steps_proximity_check": 0,
-                "max_update_start_steps": 1,
-                "max_update_end_steps": 20,
-                "convert_proximity_to_bool": True,
-            },
-            wandb_mode
-        ),
-
-        RunSettings(
-            "max_update_start_steps=10 ; max_update_end_steps=0",
-            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=10 ; max_update_end_steps=0 ; convert_proximity_to_bool=True",
-            {
-                "n_steps_collision_check": 0,
-                "n_steps_proximity_check": 0,
-                "max_update_start_steps": 10,
-                "max_update_end_steps": 0,
-                "convert_proximity_to_bool": True,
-            },
-            wandb_mode
-        ),
-
-        RunSettings(
-            "max_update_start_steps=10 ; max_update_end_steps=1",
-            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=10 ; max_update_end_steps=1 ; convert_proximity_to_bool=True",
-            {
-                "n_steps_collision_check": 0,
-                "n_steps_proximity_check": 0,
-                "max_update_start_steps": 10,
-                "max_update_end_steps": 1,
-                "convert_proximity_to_bool": True,
-            },
-            wandb_mode
-        ),
-
-        RunSettings(
-            "max_update_start_steps=10 ; max_update_end_steps=10",
-            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=10 ; max_update_end_steps=10 ; convert_proximity_to_bool=True",
-            {
-                "n_steps_collision_check": 0,
-                "n_steps_proximity_check": 0,
-                "max_update_start_steps": 10,
-                "max_update_end_steps": 10,
-                "convert_proximity_to_bool": True,
-            },
-            wandb_mode
-        ),
-
-        RunSettings(
-            "max_update_start_steps=10 ; max_update_end_steps=20",
-            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=10 ; max_update_end_steps=20 ; convert_proximity_to_bool=True",
-            {
-                "n_steps_collision_check": 0,
-                "n_steps_proximity_check": 0,
-                "max_update_start_steps": 10,
-                "max_update_end_steps": 20,
-                "convert_proximity_to_bool": True,
-            },
-            wandb_mode
-        ),
-
-        RunSettings(
-            "max_update_start_steps=20 ; max_update_end_steps=0",
-            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=20 ; max_update_end_steps=0 ; convert_proximity_to_bool=True",
-            {
-                "n_steps_collision_check": 0,
-                "n_steps_proximity_check": 0,
-                "max_update_start_steps": 20,
-                "max_update_end_steps": 0,
-                "convert_proximity_to_bool": True,
-            },
-            wandb_mode
-        ),
-
-        RunSettings(
-            "max_update_start_steps=20 ; max_update_end_steps=1",
-            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=20 ; max_update_end_steps=1 ; convert_proximity_to_bool=True",
-            {
-                "n_steps_collision_check": 0,
-                "n_steps_proximity_check": 0,
-                "max_update_start_steps": 20,
-                "max_update_end_steps": 1,
-                "convert_proximity_to_bool": True,
-            },
-            wandb_mode
-        ),
-
-        RunSettings(
-            "max_update_start_steps=20 ; max_update_end_steps=10",
-            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=20 ; max_update_end_steps=10 ; convert_proximity_to_bool=True",
-            {
-                "n_steps_collision_check": 0,
-                "n_steps_proximity_check": 0,
-                "max_update_start_steps": 20,
-                "max_update_end_steps": 10,
-                "convert_proximity_to_bool": True,
-            },
-            wandb_mode
-        ),
-
-        RunSettings(
-            "max_update_start_steps=20 ; max_update_end_steps=20",
-            "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=20 ; max_update_end_steps=20 ; convert_proximity_to_bool=True",
-            {
-                "n_steps_collision_check": 0,
-                "n_steps_proximity_check": 0,
-                "max_update_start_steps": 20,
-                "max_update_end_steps": 20,
-                "convert_proximity_to_bool": True,
-            },
-            wandb_mode
-        ),
+        # RunSettings(
+        #     "lr optimization",
+        #     "lr: 0.0001 ; starting_epsilon: 800 ; random_scale: 2_000",
+        #     "",
+        #     {
+        #         "max_games": 10_000,
+        #         "n_steps_collision_check": 0,
+        #         "n_steps_proximity_check": 0,
+        #         "convert_proximity_to_bool": True,
+        #         "lr": 0.0001,
+        #         "starting_epsilon": 800,
+        #         "random_scale": 2_000
+        #     },
+        #     wandb_mode
+        # ),
+        # RunSettings(
+        #     "debug model weights",
+        #     "no-weight-init",
+        #     "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=0 ; max_update_end_steps=1 ; convert_proximity_to_bool=True",
+        #     {
+        #         "init_kaiming_normal": False,
+        #         "max_games": 1200,
+        #         "n_steps_collision_check": 0,
+        #         "n_steps_proximity_check": 0,
+        #         "max_update_start_steps": 0,
+        #         "max_update_end_steps": 0,
+        #         "convert_proximity_to_bool": True,
+        #     },
+        #     wandb_mode
+        # ),
+        # RunSettings(
+        #     "debug model weights",
+        #     "with-weight-init",
+        #     "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=0 ; max_update_end_steps=1 ; convert_proximity_to_bool=True",
+        #     {
+        #         "init_kaiming_normal": True,
+        #         "max_games": 1200,
+        #         "n_steps_collision_check": 0,
+        #         "n_steps_proximity_check": 0,
+        #         "max_update_start_steps": 0,
+        #         "max_update_end_steps": 0,
+        #         "convert_proximity_to_bool": True,
+        #     },
+        #     wandb_mode
+        # )
     ]
 
 
