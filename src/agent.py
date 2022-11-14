@@ -426,9 +426,9 @@ def train(run_settings: Optional[RunSettings] = None):
     min_iter_no_learning = 200
     mean_score = 0
     while agent.n_games < agent.max_games:
-        if agent.n_games > min_iter_no_learning and mean_score < 1:
-            logging.info(f"breaking learning loop, agent.n_games > {min_iter_no_learning} and mean_score < 1")
-            break
+        # if agent.n_games > min_iter_no_learning and mean_score < 1:
+        #     logging.info(f"breaking learning loop, agent.n_games > {min_iter_no_learning} and mean_score < 1")
+        #     break
 
         # get old state
         state_old = agent.get_state(game)
@@ -456,7 +456,7 @@ def train(run_settings: Optional[RunSettings] = None):
             if score > record:
                 record = score
                 agent.model.save('best.pth')
-
+                torch.save(agent.model.activations_layer_1, f'./model/activations_init_kaiming_normal_{agent.init_kaiming_normal}.pt')
 
             total_score += score
             agent.last_scores.append(score)
@@ -465,6 +465,16 @@ def train(run_settings: Optional[RunSettings] = None):
 
             logging.info('Game', agent.n_games, 'Score', score, 'mean_score', mean_score, 'Record:', record)
             linear1_n_non_active = torch.sum(agent.model.activations_layer_1 <= 0)
+
+
+            if agent.n_games == 1:
+                wandb.log({
+                    'score': 0,
+                    'mean_score': 0,
+                    'ma_1000_score': 0,
+                    'linear1_n_non_active': torch.sum(agent.model.initial_activations <= 0),
+                })
+
             wandb.log({
                 'score': score,
                 'mean_score': mean_score,
@@ -473,6 +483,7 @@ def train(run_settings: Optional[RunSettings] = None):
             })
 
     # wandb.finish()
+    return agent
 
 
 if __name__ == '__main__':

@@ -23,12 +23,18 @@ class Linear_QNet(nn.Module):
         self.timestamp = datetime.now().isoformat()
         self.activations_layer_1 = None
         self.initial_activations = None
+        self.initial_weights = None
+        self.initial_x = None
+        self.initial_bias = None
 
-    def forward(self, x):
-        x = F.relu(self.linear1(x))
+    def forward(self, input_x):
+        x = F.relu(self.linear1(input_x))
         with torch.no_grad():
             self.activations_layer_1 = x.detach().clone()
             if not torch.is_tensor(self.initial_activations):
+                self.initial_x = input_x
+                self.initial_weights = self.linear1.weight.detach().clone()
+                self.initial_bias = self.linear1.bias
                 self.initial_activations = x.detach().clone()
 
         x = self.linear2(x)
