@@ -464,11 +464,12 @@ def train(run_settings: Optional[RunSettings] = None):
             mean_score = total_score / agent.n_games
 
             logging.info('Game', agent.n_games, 'Score', score, 'mean_score', mean_score, 'Record:', record)
-            # weights and baises logging
+            linear1_n_non_active = torch.sum(agent.model.activations_layer_1 <= 0)
             wandb.log({
                 'score': score,
                 'mean_score': mean_score,
                 'ma_1000_score': ma,
+                'linear1_n_non_active': linear1_n_non_active,
             })
 
     # wandb.finish()
@@ -540,30 +541,8 @@ if __name__ == '__main__':
         #     wandb_mode
         # )
     ]
-
-
-    # from multiprocessing import Pool
-    #
-    # with Pool(n) as p:
-    #     print(p.map(train, runs_settings))
-
-    for rs in runs_settings:
+    for rs in run_settings:
         train(rs)
-
-    # run_settings = RunSettings(
-    #         "test-0  max_update_start_steps=0 ; max_update_end_steps=1",
-    #         "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=0 ; max_update_end_steps=1 ; convert_proximity_to_bool=True",
-    #         {
-    #             "n_steps_collision_check": 0,
-    #             "n_steps_proximity_check": 0,
-    #             "max_update_start_steps": 0,
-    #             "max_update_end_steps": 1,
-    #             "convert_proximity_to_bool": True,
-    #         },
-    #         wandb_mode
-    # )
-    # train(run_settings)
-
 
     # params = {
     #     'max_games': {'values': [2000]},
