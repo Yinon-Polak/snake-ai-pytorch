@@ -12,13 +12,14 @@ from torch.optim.lr_scheduler import StepLR
 
 
 class Linear_QNet(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, init_kaiming_normal=False):
+    def __init__(self, input_size, hidden_size, output_size, activation_func, init_kaiming_normal=False):
         super().__init__()
+        self.activation_func = activation_func
         self.linear1 = nn.Linear(input_size, hidden_size)
         self.linear2 = nn.Linear(hidden_size, output_size)
         if init_kaiming_normal:
-            nn.init.kaiming_normal(self.linear1.weight, mode='fan_in')
-            nn.init.kaiming_normal(self.linear2.weight, mode='fan_in')
+            nn.init.kaiming_normal_(self.linear1.weight, mode='fan_in', nonlinearity=activation_func.__name__)
+            nn.init.kaiming_normal_(self.linear2.weight, mode='fan_in', nonlinearity=activation_func.__name__)
 
         self.timestamp = datetime.now().isoformat()
         self.activations_layer_1 = None
