@@ -27,6 +27,7 @@ class Linear_QNet(nn.Module):
         self.initial_weights = None
         self.initial_x = None
         self.initial_bias = None
+        self.ud = []
 
     def forward(self, input_x):
         x = F.relu(self.linear1(input_x))
@@ -52,6 +53,12 @@ class Linear_QNet(nn.Module):
     def load(self, path):
         state_dict = torch.load(path)
         self.load_state_dict(state_dict)
+
+    def add_ud_i(self, lr):
+        with torch.no_grad():
+            ud_i = [((lr * p.grad).std() / p.data.std()).log10().item() for p in self.parameters()]
+            self.ud.append(ud_i)
+        return ud_i
 
 class QTrainer:
     def __init__(self, model, lr, gamma, scheduler_step_size, scheduler_gamma):

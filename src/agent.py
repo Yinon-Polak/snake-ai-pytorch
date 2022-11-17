@@ -10,6 +10,9 @@ import numpy as np
 from collections import deque
 from typing import Tuple, List, Optional, Deque
 
+import torch.nn.functional as F
+from torch import Tensor
+
 from src.collision_type import CollisionType
 from src.game import SnakeGameAI, Direction, Point, BLOCK_SIZE, head_to_global_direction
 from src.model import Linear_QNet, QTrainer
@@ -39,7 +42,8 @@ DEFAULT_AGENT_KWARGS = {
     'scheduler_step_size': 100_000,
     'scheduler_gamma': 0.1,
     'override_proximity_to_bool': True,
-    'init_kaiming_normal': False
+    'init_kaiming_normal': False,
+    'activation_func': F.relu
 }
 
 
@@ -91,6 +95,7 @@ class Agent:
         self.scheduler_gamma: int = kwargs['scheduler_gamma']
 
         self.init_kaiming_normal: bool = kwargs['init_kaiming_normal']
+        self.activation_func: any = kwargs['activation_func']
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
 
@@ -98,7 +103,7 @@ class Agent:
 
         self.n_features = len(self.get_state(game))
         self.k['n_features'] = self.n_features
-        self.model = Linear_QNet(input_size=self.n_features, hidden_size=self.model_hidden_size_l1, output_size=3, init_kaiming_normal=self.init_kaiming_normal)
+        self.model = Linear_QNet(input_size=self.n_features, hidden_size=self.model_hidden_size_l1, output_size=3, activation_func=self.activation_func, init_kaiming_normal=self.init_kaiming_normal)
         self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma, scheduler_step_size=self.scheduler_step_size, scheduler_gamma=self.scheduler_gamma)
         self.should_update_rewards = self.max_update_start_steps > 0 or self.max_update_end_steps > 0
 
@@ -379,6 +384,14 @@ class Agent:
         return final_move
 
 
+def count_non_active(tensor: Tensor, func_name: str) -> int:
+    if func_name == 'relu' or func_name == 'leaky_relu':
+        return torch.sum(tensor <= 0).item()
+    if func_name == 'tanh':
+        return torch.sum(tensor > 0.99).item()
+
+    raise Exception(f'no supported count_non_active method for: {func_name}')
+
 
 @dataclass
 class RunSettings:
@@ -426,9 +439,9 @@ def train(run_settings: Optional[RunSettings] = None):
     min_iter_no_learning = 200
     mean_score = 0
     while agent.n_games < agent.max_games:
-        # if agent.n_games > min_iter_no_learning and mean_score < 1:
-        #     logging.info(f"breaking learning loop, agent.n_games > {min_iter_no_learning} and mean_score < 1")
-        #     break
+        if agent.n_games > min_iter_no_learning and mean_score < 1:
+            logging.info(f"breaking learning loop, agent.n_games > {min_iter_no_learning} and mean_score < 1")
+            break
 
         # get old state
         state_old = agent.get_state(game)
@@ -450,7 +463,10 @@ def train(run_settings: Optional[RunSettings] = None):
             # train long memory
             agent.n_games += 1
             agent.train_long_memory(game, reward)
-            agent.trainer.lr_scheduler.step()
+            if agent.scheduler_step_size < agent.trainer.lr_scheduler.get_last_lr()[0]:
+                agent.trainer.lr_scheduler.step()
+
+            ud_i = agent.model.add_ud_i(agent.trainer.lr_scheduler.get_last_lr()[0])
             game.reset()
 
             if score > record:
@@ -464,7 +480,7 @@ def train(run_settings: Optional[RunSettings] = None):
             mean_score = total_score / agent.n_games
 
             logging.info('Game', agent.n_games, 'Score', score, 'mean_score', mean_score, 'Record:', record)
-            linear1_n_non_active = torch.sum(agent.model.activations_layer_1 <= 0)
+            linear1_n_non_active = count_non_active(agent.model.activations_layer_1, agent.activation_func.__name__)
 
 
             if agent.n_games == 1:
@@ -472,15 +488,21 @@ def train(run_settings: Optional[RunSettings] = None):
                     'score': 0,
                     'mean_score': 0,
                     'ma_1000_score': 0,
-                    'linear1_n_non_active': torch.sum(agent.model.initial_activations <= 0),
+                    'linear1_n_non_active': count_non_active(agent.model.initial_activations, agent.activation_func.__name__),
                 })
 
-            wandb.log({
+            log_d = {
                 'score': score,
                 'mean_score': mean_score,
                 'ma_1000_score': ma,
                 'linear1_n_non_active': linear1_n_non_active,
-            })
+            }
+
+            for i, p in enumerate(agent.model.parameters()):
+                if p.ndim == 2:
+                    log_d[f'param {i}'] = ud_i[i]
+
+            wandb.log(log_d)
 
     # wandb.finish()
     return agent
