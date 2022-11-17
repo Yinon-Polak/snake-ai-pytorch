@@ -6,33 +6,28 @@ from src.collision_type import CollisionType
 if __name__ == '__main__':
 
     params = {
-        'max_games': {'values': [3500]},
-        'epsilon': {'values': [0]},
-        'gamma': {'values': [0.9]},
-        'lr': {'values': [0.001]},
-        'batch_size': {'values': [1_000]},
-        'max_memory': {'values': [100_000]},
-        'n_steps_collision_check': {'values': [0, 1, 2, 4, 8]},
-        'max_update_steps': {'values': [0, 10, 30, 90, 270]},
         'collision_types': {'values': [[CollisionType.BOTH], [CollisionType.BODY, CollisionType.BORDER]]},
-        'model_hidden_size_l1': {'values': [128, 256, 512, 1024]},
+        'starting_epsilon': {'distribution': 'int_uniform', 'min': 40, 'max': 200, },  # 80,
+        'random_scale': {'distribution': 'int_uniform', 'min': 150, 'max': 500, },  # 200,
+        'max_update_end_steps': {'distribution': 'int_uniform', 'min': 0, 'max': 100, },  # 0,
+        'max_update_start_steps': {'distribution': 'int_uniform', 'min': 0, 'max': 10, },  # 0,
     }
 
-    method = "random"
+    method = "bayes"
 
     sweep_config = {
         'method': method,
         'metric': {
-            'name': 'mean_score',
+            'name': 'ma_1000_score',
             'goal': 'maximize'
         },
         'parameters': params,
         'early_terminate':  {
             'type': 'hyperband',
-            'min_iter': 800,
+            'min_iter': 1500,
             'eta': 100,
         }
     }
 
     sweep_id = wandb.sweep(sweep_config)
-    wandb.agent(sweep_id, function=train)
+    wandb.agent(sweep_id, function=train, count=25)

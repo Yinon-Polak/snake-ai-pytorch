@@ -21,17 +21,25 @@ from src.utils.utils import flatten
 
 DEFAULT_AGENT_KWARGS = {
     'n_features': 11,
-    'max_games': 2000,
-    'epsilon': 0,
+    'max_games': 4000,
     'gamma': 0.9,
     'lr': 0.001,
     'batch_size': 1_000,
     'max_memory': 100_000,
     'n_steps_collision_check': 0,
-    'max_update_steps': 0,
     'collision_types': [CollisionType.BOTH],
     'model_hidden_size_l1': 256,
-    'n_steps_proximity_check': -1
+    'n_steps_proximity_check': -1,
+    'starting_epsilon': 80,
+    'random_scale': 200,
+    'max_update_end_steps': 0,
+    'max_update_start_steps': 0,
+    'min_len_snake_at_update': 0,
+    'convert_proximity_to_bool': False,
+    'scheduler_step_size': 100_000,
+    'scheduler_gamma': 0.1,
+    'override_proximity_to_bool': True,
+    'init_kaiming_normal': False
 }
 
 
@@ -58,28 +66,41 @@ class Agent:
         else:
             kwargs = DEFAULT_AGENT_KWARGS
 
+        self.k = kwargs
+
         self.n_games: int = 0
         # self.n_features: int = kwargs["n_features"]
         self.max_games: int = kwargs['max_games']
-        self.epsilon: int = kwargs['epsilon']
         self.gamma: float = kwargs['gamma']
         self.lr: float = kwargs['lr']
         self.batch_size: int = kwargs['batch_size']
         self.max_memory: int = kwargs['max_memory']
         self.n_steps_collision_check: int = kwargs['n_steps_collision_check']
-        self.max_update_steps: int = kwargs['max_update_steps']
         self.collision_types: List[CollisionType] = kwargs['collision_types']
         self.model_hidden_size_l1: int = kwargs['model_hidden_size_l1']
         # self.non_zero_memory: Deque[int] = kwargs.get('non_zero_memory', deque(maxlen=self.max_memory))
         self.n_steps_proximity_check: int = kwargs['n_steps_proximity_check']
+        self.random_scale: int = kwargs['random_scale']
+        self.starting_epsilon: int = kwargs['starting_epsilon']  # self.n_games_exploration
+        self.max_update_end_steps: int = kwargs['max_update_end_steps']
+        self.max_update_start_steps: int = kwargs['max_update_start_steps']
+        self.convert_proximity_to_bool: bool = kwargs['convert_proximity_to_bool']
+        self.override_proximity_to_bool: bool = kwargs['override_proximity_to_bool']
+        self.min_len_snake_at_update: int = kwargs['min_len_snake_at_update']
+        self.scheduler_step_size: int = kwargs['scheduler_step_size']
+        self.scheduler_gamma: int = kwargs['scheduler_gamma']
+
+        self.init_kaiming_normal: bool = kwargs['init_kaiming_normal']
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
 
-        self.last_scores = deque(maxlen=500)
+        self.last_scores = deque(maxlen=1000)
 
         self.n_features = len(self.get_state(game))
-        self.model = Linear_QNet(input_size=self.n_features, hidden_size=self.model_hidden_size_l1, output_size=3)
-        self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma)
+        self.k['n_features'] = self.n_features
+        self.model = Linear_QNet(input_size=self.n_features, hidden_size=self.model_hidden_size_l1, output_size=3, init_kaiming_normal=self.init_kaiming_normal)
+        self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma, scheduler_step_size=self.scheduler_step_size, scheduler_gamma=self.scheduler_gamma)
+        self.should_update_rewards = self.max_update_start_steps > 0 or self.max_update_end_steps > 0
 
     @staticmethod
     def get_sorounding_points(point: Point, c: int = 1) -> Tuple[Point, Point, Point, Point]:
@@ -183,6 +204,10 @@ class Agent:
             point_d1: Point,
             n_steps: int,
     ) -> List[bool]:
+
+        if n_steps == -1:
+            return []
+
         collisions_vec_dist_0 = self.is_collisions(game,
                                                    direction=game.direction,
                                                    collision_type=collision_type,
@@ -254,7 +279,20 @@ class Agent:
             point_l1, point_r1, point_u1, point_d1,
         )
 
+        if self.convert_proximity_to_bool:
+            if self.override_proximity_to_bool:
+                distance_to_body_vec = [prox < 1 for prox in distance_to_body_vec]
+            else:
+                bool_proximity_vec = [prox < 1 for prox in distance_to_body_vec]
+                distance_to_body_vec.extend(bool_proximity_vec)
+
+        snake_len = len(game.snake)
+
         state = [
+            len(game.last_trail) == 0,
+            len(game.last_trail) / game.n_blocks,
+            snake_len / game.n_blocks,
+
             # distance to body
             *distance_to_body_vec,
 
@@ -267,7 +305,7 @@ class Agent:
             dir_u,
             dir_d,
 
-            # Food location 
+            # Food location
             game.food.x < game.head.x,  # food left
             game.food.x > game.head.x,  # food right
             game.food.y < game.head.y,  # food up
@@ -283,8 +321,13 @@ class Agent:
     #     self.non_zero_memory.append((state, action, reward, next_state, done)) # popleft if MAX_MEMORY is reached
 
     def train_long_memory(self, game: SnakeGameAI, reward):
-        if self.max_update_steps > 0:
-            self._update_rewards(game, reward)
+        if self.should_update_rewards and len(game.snake) > self.min_len_snake_at_update:
+            updated_records = self._update_rewards(game, reward, return_updated_records=True)
+            self.trainer.reset_state_to_last_checkpoint()
+
+            # retrain with updated rewards
+            for state, action, reward, next_state, done in updated_records:
+                self.trainer.train_step(state, action, reward, next_state, done)
 
         if len(self.memory) > self.batch_size:
             mini_sample = random.sample(self.memory, self.batch_size)  # list of tuples
@@ -293,29 +336,38 @@ class Agent:
 
         states, actions, rewards, next_states, dones = zip(*mini_sample)
         self.trainer.train_step(states, actions, rewards, next_states, dones)
-        # for state, action, reward, nexrt_state, done in mini_sample:
-        #    self.trainer.train_step(state, action, reward, next_state, done)
+
+        if self.should_update_rewards:
+            self.trainer.save_state_checkpoint()
 
     def train_short_memory(self, state, action, reward, next_state, done):
         self.trainer.train_step(state, action, reward, next_state, done)
 
-    def _update_rewards(self, game: SnakeGameAI, last_reward: int):
-        n_change = min(len(game.snake), self.max_update_steps)
+    def _update_rewards(self, game: SnakeGameAI, last_reward: int, return_updated_records):
+        len_last_trail = len(game.last_trail)
         last_records = []
-        for _ in range(n_change):
-            (state, action, reward, next_state, done) = self.memory.pop()
-            reward = last_reward  # reward
-            last_records.insert(0, (state, action, reward, next_state, done))
+        for _ in range(len_last_trail):
+            last_records.insert(0, self.memory.pop())
+
+        modified_last_record = []
+        for i, record in enumerate(last_records):
+            (state, action, reward, next_state, done) = record
+            if i < self.max_update_start_steps or i >= (len_last_trail - self.max_update_end_steps):
+                reward = last_reward  # reward
+            modified_last_record.append((state, action, reward, next_state, done))
             # self.remember_no_zero(state, action, reward, next_state, done)
 
-        for record in last_records:
+        for record in modified_last_record:
             self.memory.append(record)
+
+        if return_updated_records:
+            return modified_last_record
 
     def get_action(self, state):
         # random moves: tradeoff exploration / exploitation
-        self.epsilon = 80 - self.n_games
         final_move = [0, 0, 0]
-        if random.randint(0, 200) < self.epsilon:
+        epsilon = self.starting_epsilon - self.n_games
+        if epsilon > 0 and random.randint(0, self.random_scale) < epsilon:
             move = random.randint(0, 2)
             final_move[move] = 1
         else:
@@ -330,6 +382,7 @@ class Agent:
 
 @dataclass
 class RunSettings:
+    project: str
     group: str
     note: str
     agent_kwargs: dict
@@ -344,28 +397,22 @@ class RunSettings:
 def train(run_settings: Optional[RunSettings] = None):
     game = SnakeGameAI()
 
-
     if not run_settings:
-        wandb.init(project='initial-sweeps-10')
+        wandb.init()
         agent = Agent(game, **wandb.config)
+        # wandb.config(agent.k)
 
     else:
         agent = Agent(game, **run_settings.agent_kwargs)
         wandb.init(
             reinit=True,
-            project='reproduce-failed-runs',
+            project=run_settings.project,
             group=run_settings.group,
             name=str(run_settings.index),
             notes=run_settings.note,
-            config={
-                "architecture": "Linear_QNet",
-                "learning_rate": agent.lr,
-                "batch_size": agent.batch_size,
-                "max_memory": agent.max_memory,
-                "gamma": agent.gamma,
-            },
+            config=agent.k,
             settings=run_settings.wandb_setttings,
-            mode=wandb_mode,
+            mode=run_settings.wandb_mode,
         )
 
     total_score = 0
@@ -376,11 +423,12 @@ def train(run_settings: Optional[RunSettings] = None):
     # except Exception as e:
     #     print(e)
     #     wandb.watch(agent.model)
-    mean_score  = 0
+    min_iter_no_learning = 200
+    mean_score = 0
     while agent.n_games < agent.max_games:
-        if agent.n_games > 350 and mean_score < 1:
-            logging.info("breaking learning loop, agent.n_games > 350 and mean_score < 1")
-            break
+        # if agent.n_games > min_iter_no_learning and mean_score < 1:
+        #     logging.info(f"breaking learning loop, agent.n_games > {min_iter_no_learning} and mean_score < 1")
+        #     break
 
         # get old state
         state_old = agent.get_state(game)
@@ -400,14 +448,15 @@ def train(run_settings: Optional[RunSettings] = None):
 
         if done:
             # train long memory
-            game.reset()
             agent.n_games += 1
             agent.train_long_memory(game, reward)
+            agent.trainer.lr_scheduler.step()
+            game.reset()
 
             if score > record:
                 record = score
-                agent.model.save()
-
+                agent.model.save('best.pth')
+                torch.save(agent.model.activations_layer_1, f'./model/activations_init_kaiming_normal_{agent.init_kaiming_normal}.pt')
 
             total_score += score
             agent.last_scores.append(score)
@@ -415,49 +464,96 @@ def train(run_settings: Optional[RunSettings] = None):
             mean_score = total_score / agent.n_games
 
             logging.info('Game', agent.n_games, 'Score', score, 'mean_score', mean_score, 'Record:', record)
-            # weights and baises logging
+            linear1_n_non_active = torch.sum(agent.model.activations_layer_1 <= 0)
+
+
+            if agent.n_games == 1:
+                wandb.log({
+                    'score': 0,
+                    'mean_score': 0,
+                    'ma_1000_score': 0,
+                    'linear1_n_non_active': torch.sum(agent.model.initial_activations <= 0),
+                })
+
             wandb.log({
                 'score': score,
                 'mean_score': mean_score,
-                'ma_500_score': ma,
+                'ma_1000_score': ma,
+                'linear1_n_non_active': linear1_n_non_active,
             })
 
     # wandb.finish()
+    return agent
 
 
 if __name__ == '__main__':
     # wandb_mode = "disabled"
     wandb_mode = "online"
 
-    # n = 5
-    # single_runs_settings = [
-    #     RunSettings(
-    #         "initial-test-refactor",
-    #         "look ahead 1 steps and check collsions, collision_types = CollisionType.BOTH",
-    #         {"n_features": 14, "max_games": 30},
-    #         wandb_mode
-    #     )
-    # ]
-    #
-    # multiple_runs_settings = flatten([run_settings.generate_instances(n=n) for run_settings in single_runs_settings])
-    #
-    #
-    # from multiprocessing import Pool
-    #
-    # with Pool(2) as p:
-    #     print(p.map(train, multiple_runs_settings))
-
-    run_settings = RunSettings(
-        "milestone-3 ; n_steps_proximity_check=-1 ; n_steps_collision_check=1",
-        "reproduce-base-line",
-        {
-            'n_steps_collision_check': 1,
-            'n_steps_proximity_check': -1,
-        },
-        wandb_mode
-    )
-    train(run_settings)
-
+    run_settings = [
+        RunSettings(
+                "lr optimization",
+                "continue ; lr: 0.0001 ; starting_epsilon: 8000 ; random_scale: 20_000",
+                "",
+                {
+                    "max_games": 100_000,
+                    "n_steps_collision_check": 0,
+                    "n_steps_proximity_check": 0,
+                    "convert_proximity_to_bool": True,
+                    "lr": 0.0001,
+                    "starting_epsilon": 8_000,
+                    "random_scale": 20_000
+                },
+                wandb_mode
+        ),
+        # RunSettings(
+        #     "lr optimization",
+        #     "lr: 0.0001 ; starting_epsilon: 800 ; random_scale: 2_000",
+        #     "",
+        #     {
+        #         "max_games": 10_000,
+        #         "n_steps_collision_check": 0,
+        #         "n_steps_proximity_check": 0,
+        #         "convert_proximity_to_bool": True,
+        #         "lr": 0.0001,
+        #         "starting_epsilon": 800,
+        #         "random_scale": 2_000
+        #     },
+        #     wandb_mode
+        # ),
+        # RunSettings(
+        #     "debug model weights",
+        #     "no-weight-init",
+        #     "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=0 ; max_update_end_steps=1 ; convert_proximity_to_bool=True",
+        #     {
+        #         "init_kaiming_normal": False,
+        #         "max_games": 1200,
+        #         "n_steps_collision_check": 0,
+        #         "n_steps_proximity_check": 0,
+        #         "max_update_start_steps": 0,
+        #         "max_update_end_steps": 0,
+        #         "convert_proximity_to_bool": True,
+        #     },
+        #     wandb_mode
+        # ),
+        # RunSettings(
+        #     "debug model weights",
+        #     "with-weight-init",
+        #     "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=0 ; max_update_end_steps=1 ; convert_proximity_to_bool=True",
+        #     {
+        #         "init_kaiming_normal": True,
+        #         "max_games": 1200,
+        #         "n_steps_collision_check": 0,
+        #         "n_steps_proximity_check": 0,
+        #         "max_update_start_steps": 0,
+        #         "max_update_end_steps": 0,
+        #         "convert_proximity_to_bool": True,
+        #     },
+        #     wandb_mode
+        # )
+    ]
+    for rs in run_settings:
+        train(rs)
 
     # params = {
     #     'max_games': {'values': [2000]},
