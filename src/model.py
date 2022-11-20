@@ -28,19 +28,30 @@ class Linear_QNet(nn.Module):
         self.initial_x = None
         self.initial_bias = None
         self.ud = []
+        self.last_game_active = None
+        self.n_games = 0
+        self.non_active_neurons_area_above_curve = None
 
     def forward(self, input_x):
-        x = F.relu(self.linear1(input_x))
+        linear1_output = self.linear1(input_x)
+        activations = self.activation_func(linear1_output)
         with torch.no_grad():
-            self.activations_layer_1 = x.detach().clone()
+            self.activations_layer_1 = activations.clone().detach()
             if not torch.is_tensor(self.initial_activations):
-                self.initial_x = input_x
-                self.initial_weights = self.linear1.weight.detach().clone()
-                self.initial_bias = self.linear1.bias
-                self.initial_activations = x.detach().clone()
+                self.initial_activations = activations.clone().detach()
+                self.initial_x = input_x.clone().detach()
+                self.initial_weights = self.linear1.weight.clone().detach()
+                self.initial_bias = self.linear1.bias.clone().detach()
+                self.last_game_active = torch.zeros(activations.shape[0])
 
-        x = self.linear2(x)
-        return x
+            if input_x.ndim == 2 and input_x.shape[0] > 1:
+                mask = activations.max(0).values.squeeze() > 0
+                self.last_game_active[mask] = self.n_games
+                total_area = self.n_games * self.last_game_active.shape[0]
+                self.non_active_neurons_area_above_curve = (total_area - self.last_game_active.sum()) / total_area
+
+        linear2_output = self.linear2(activations)
+        return linear2_output
 
     def save(self, file_name):
         model_folder_path = './model'

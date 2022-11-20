@@ -305,6 +305,7 @@ def train(run_settings: Optional[RunSettings] = None):
         if done:
             # train long memory
             agent.n_games += 1
+            agent.model.n_games += 1
             agent.train_long_memory(game, reward)
             if agent.scheduler_step_size < agent.trainer.lr_scheduler.get_last_lr()[0]:
                 agent.trainer.lr_scheduler.step()
@@ -315,7 +316,6 @@ def train(run_settings: Optional[RunSettings] = None):
             if score > record:
                 record = score
                 agent.model.save('best.pth')
-                torch.save(agent.model.activations_layer_1, f'./model/activations_init_kaiming_normal_{agent.init_kaiming_normal}.pt')
 
             total_score += score
             agent.last_scores.append(score)
@@ -323,21 +323,12 @@ def train(run_settings: Optional[RunSettings] = None):
             mean_score = total_score / agent.n_games
 
             logging.info('Game', agent.n_games, 'Score', score, 'mean_score', mean_score, 'Record:', record)
-            linear1_n_non_active = count_non_active(agent.model.activations_layer_1, agent.activation_func.__name__)
-
-            if agent.n_games == 1:
-                wandb.log({
-                    'score': 0,
-                    'mean_score': 0,
-                    'ma_1000_score': 0,
-                    'linear1_n_non_active': count_non_active(agent.model.initial_activations, agent.activation_func.__name__),
-                })
 
             log_d = {
                 'score': score,
                 'mean_score': mean_score,
                 'ma_1000_score': ma,
-                'linear1_n_non_active': linear1_n_non_active,
+                'l1 non active neurons AAC': agent.model.non_active_neurons_area_above_curve,
             }
 
             for i, p in enumerate(agent.model.parameters()):
@@ -346,7 +337,7 @@ def train(run_settings: Optional[RunSettings] = None):
 
             wandb.log(log_d)
 
-    # wandb.finish()
+    wandb.finish()
     return agent
 
 
@@ -357,7 +348,7 @@ if __name__ == '__main__':
     run_settings = [
         RunSettings(
                 "test",
-                "test collision calculator refactoring",
+                "test logging of activations AAC",
                 "",
                 {
                     "n_steps_proximity_check": 0,
