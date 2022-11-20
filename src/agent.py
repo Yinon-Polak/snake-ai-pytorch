@@ -19,6 +19,7 @@ from src.model import Linear_QNet, QTrainer
 
 import wandb
 
+from src.utils.agent_utils.collision_calculator import CollisionCalculator
 from src.utils.agent_utils.proximity_calculator import ProximityCalculator
 from src.utils.utils import flatten
 
@@ -72,6 +73,8 @@ class Agent:
 
         self.k = kwargs
 
+        self.collision_calculator = CollisionCalculator(BLOCK_SIZE)
+
         self.n_games: int = 0
         # self.n_features: int = kwargs["n_features"]
         self.max_games: int = kwargs['max_games']
@@ -107,167 +110,14 @@ class Agent:
         self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma, scheduler_step_size=self.scheduler_step_size, scheduler_gamma=self.scheduler_gamma)
         self.should_update_rewards = self.max_update_start_steps > 0 or self.max_update_end_steps > 0
 
-    @staticmethod
-    def get_sorounding_points(point: Point, c: int = 1) -> Tuple[Point, Point, Point, Point]:
-        point_l = Point(point.x - c * BLOCK_SIZE, point.y)
-        point_r = Point(point.x + c * BLOCK_SIZE, point.y)
-        point_u = Point(point.x, point.y - c * BLOCK_SIZE)
-        point_d = Point(point.x, point.y + c * BLOCK_SIZE)
-        return point_l, point_r, point_u, point_d
-
-    @staticmethod
-    def get_point_ahead(direction: Direction, point_l2, point_r2, point_u2, point_d2) -> Point:
-        if direction == Direction.LEFT: return point_l2
-        if direction == Direction.RIGHT: return point_r2
-        if direction == Direction.UP: return point_u2
-        if direction == Direction.DOWN: return point_d2
-
-    def is_collisions(
-            self,
-            game: SnakeGameAI,
-            direction: Direction,
-            collision_type: CollisionType,
-            point_r: Point,
-            point_d: Point,
-            point_l: Point,
-            point_u: Point,
-    ) -> List[bool]:
-        dir_l, dir_r, dir_u, dir_d = self.get_direction_bool_vector(direction)
-        return [
-            (dir_r and game.is_collision(collision_type, point_r)) or
-            (dir_l and game.is_collision(collision_type, point_l)) or
-            (dir_u and game.is_collision(collision_type, point_u)) or
-            (dir_d and game.is_collision(collision_type, point_d)),
-
-            # Danger right
-            (dir_u and game.is_collision(collision_type, point_r)) or
-            (dir_d and game.is_collision(collision_type, point_l)) or
-            (dir_l and game.is_collision(collision_type, point_u)) or
-            (dir_r and game.is_collision(collision_type, point_d)),
-
-            # Danger left
-            (dir_d and game.is_collision(collision_type, point_r)) or
-            (dir_u and game.is_collision(collision_type, point_l)) or
-            (dir_r and game.is_collision(collision_type, point_u)) or
-            (dir_l and game.is_collision(collision_type, point_d)),
-        ]
-
-    @staticmethod
-    def get_direction_bool_vector(direction) -> List[bool]:
-        dir_l = direction == Direction.LEFT
-        dir_r = direction == Direction.RIGHT
-        dir_u = direction == Direction.UP
-        dir_d = direction == Direction.DOWN
-        return [
-            dir_l,
-            dir_r,
-            dir_u,
-            dir_d,
-        ]
-
-    # oriatation features - get collisotions one step ahead in each snake direction [stright, right, left]
-    # syntax: point_ snake_direction_ [stright, right, left], global_ { Direction }
-    def get_is_collisions_wrapper(
-            self,
-            game: SnakeGameAI,
-            turn: List[int],
-            collision_type: CollisionType,
-            point_l1: Point,
-            point_r1: Point,
-            point_u1: Point,
-            point_d1: Point,
-            n_steps: int = 1,
-    ) -> List[bool]:
-        some_direction = head_to_global_direction(game.direction, turn)
-
-        collisions_vectors_dist = []
-        for _ in range(n_steps):
-            point_ahead = self.get_point_ahead(
-                some_direction,
-                point_l1, point_r1, point_u1, point_d1,
-            )
-
-            point_l1, point_r1, point_u1, point_d1 = self.get_sorounding_points(point_ahead)
-            collisions_vec_dist = self.is_collisions(game,
-                                                     direction=some_direction,
-                                                     collision_type=collision_type,
-                                                     point_r=point_r1,
-                                                     point_d=point_d1,
-                                                     point_l=point_l1,
-                                                     point_u=point_u1, )
-            collisions_vectors_dist.append(collisions_vec_dist)
-
-        return flatten(collisions_vectors_dist)
-
-    def calc_all_directions_collisions(
-            self,
-            game: SnakeGameAI,
-            collision_type: CollisionType,
-            point_l1: Point,
-            point_r1: Point,
-            point_u1: Point,
-            point_d1: Point,
-            n_steps: int,
-    ) -> List[bool]:
-
-        if n_steps == -1:
-            return []
-
-        collisions_vec_dist_0 = self.is_collisions(game,
-                                                   direction=game.direction,
-                                                   collision_type=collision_type,
-                                                   point_r=point_r1,
-                                                   point_d=point_d1,
-                                                   point_l=point_l1,
-                                                   point_u=point_u1, )
-
-        if n_steps == 0:
-            return collisions_vec_dist_0
-
-        collisions_vec_ahead = [
-            self.get_is_collisions_wrapper(
-                game,
-                direction,
-                collision_type,
-                point_l1, point_r1, point_u1, point_d1,
-                n_steps,
-            ) for direction in [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        ]
-
-        return [*collisions_vec_dist_0, *flatten(collisions_vec_ahead)]
-
-
-    def clac_collision_vec_by_type(
-            self,
-            game: SnakeGameAI,
-            collision_types: List[CollisionType],
-            point_l1: Point,
-            point_r1: Point,
-            point_u1: Point,
-            point_d1: Point,
-            n_steps: int,
-    ) -> List[bool]:
-        collisions_vec = [
-            self.calc_all_directions_collisions(
-                game,
-                collision_type,
-                point_l1,
-                point_r1,
-                point_u1,
-                point_d1,
-                self.n_steps_collision_check
-            ) for collision_type in collision_types
-        ]
-
-        return flatten(collisions_vec)
 
     def get_state(self, game) -> np.array:
 
-        dir_l, dir_r, dir_u, dir_d = self.get_direction_bool_vector(game.direction)
+        dir_l, dir_r, dir_u, dir_d = self.collision_calculator.get_direction_bool_vector(game.direction)
         head = game.snake[0]
-        point_l1, point_r1, point_u1, point_d1 = self.get_sorounding_points(head, c=1)
+        point_l1, point_r1, point_u1, point_d1 = self.collision_calculator.get_sorounding_points(head, c=1)
 
-        collisions_vec = self.clac_collision_vec_by_type(
+        collisions_vec = self.collision_calculator.clac_collision_vec_by_type(
             game,
             self.collision_types,
             point_l1,
@@ -514,65 +364,15 @@ if __name__ == '__main__':
 
     run_settings = [
         RunSettings(
-                "lr optimization",
-                "continue ; lr: 0.0001 ; starting_epsilon: 8000 ; random_scale: 20_000",
+                "test",
+                "test collision calculator refactoring",
                 "",
                 {
-                    "max_games": 100_000,
-                    "n_steps_collision_check": 0,
                     "n_steps_proximity_check": 0,
                     "convert_proximity_to_bool": True,
-                    "lr": 0.0001,
-                    "starting_epsilon": 8_000,
-                    "random_scale": 20_000
                 },
                 wandb_mode
         ),
-        # RunSettings(
-        #     "lr optimization",
-        #     "lr: 0.0001 ; starting_epsilon: 800 ; random_scale: 2_000",
-        #     "",
-        #     {
-        #         "max_games": 10_000,
-        #         "n_steps_collision_check": 0,
-        #         "n_steps_proximity_check": 0,
-        #         "convert_proximity_to_bool": True,
-        #         "lr": 0.0001,
-        #         "starting_epsilon": 800,
-        #         "random_scale": 2_000
-        #     },
-        #     wandb_mode
-        # ),
-        # RunSettings(
-        #     "debug model weights",
-        #     "no-weight-init",
-        #     "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=0 ; max_update_end_steps=1 ; convert_proximity_to_bool=True",
-        #     {
-        #         "init_kaiming_normal": False,
-        #         "max_games": 1200,
-        #         "n_steps_collision_check": 0,
-        #         "n_steps_proximity_check": 0,
-        #         "max_update_start_steps": 0,
-        #         "max_update_end_steps": 0,
-        #         "convert_proximity_to_bool": True,
-        #     },
-        #     wandb_mode
-        # ),
-        # RunSettings(
-        #     "debug model weights",
-        #     "with-weight-init",
-        #     "collision_check=0 ; n_steps_proximity_check=0 ; max_update_start_steps=0 ; max_update_end_steps=1 ; convert_proximity_to_bool=True",
-        #     {
-        #         "init_kaiming_normal": True,
-        #         "max_games": 1200,
-        #         "n_steps_collision_check": 0,
-        #         "n_steps_proximity_check": 0,
-        #         "max_update_start_steps": 0,
-        #         "max_update_end_steps": 0,
-        #         "convert_proximity_to_bool": True,
-        #     },
-        #     wandb_mode
-        # )
     ]
     for rs in run_settings:
         train(rs)
