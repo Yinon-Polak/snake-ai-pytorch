@@ -1,27 +1,21 @@
 import dataclasses
 import logging
-import multiprocessing
-import threading
-from dataclasses import dataclass
-
-import torch
 import random
-import numpy as np
 from collections import deque
-from typing import Tuple, List, Optional, Deque
+from dataclasses import dataclass
+from typing import List, Optional
 
+import numpy as np
+import torch
 import torch.nn.functional as F
+import wandb
 from torch import Tensor
 
 from src.collision_type import CollisionType
-from src.game import SnakeGameAI, Direction, Point, BLOCK_SIZE, head_to_global_direction
+from src.game import SnakeGameAI, BLOCK_SIZE
 from src.model import Linear_QNet, QTrainer
-
-import wandb
-
 from src.utils.agent_utils.collision_calculator import CollisionCalculator
 from src.utils.agent_utils.proximity_calculator import ProximityCalculator
-from src.utils.utils import flatten
 
 DEFAULT_AGENT_KWARGS = {
     'n_features': 11,
@@ -109,7 +103,6 @@ class Agent:
         self.model = Linear_QNet(input_size=self.n_features, hidden_size=self.model_hidden_size_l1, output_size=3, activation_func=self.activation_func, init_kaiming_normal=self.init_kaiming_normal)
         self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma, scheduler_step_size=self.scheduler_step_size, scheduler_gamma=self.scheduler_gamma)
         self.should_update_rewards = self.max_update_start_steps > 0 or self.max_update_end_steps > 0
-
 
     def get_state(self, game) -> np.array:
 
@@ -331,7 +324,6 @@ def train(run_settings: Optional[RunSettings] = None):
 
             logging.info('Game', agent.n_games, 'Score', score, 'mean_score', mean_score, 'Record:', record)
             linear1_n_non_active = count_non_active(agent.model.activations_layer_1, agent.activation_func.__name__)
-
 
             if agent.n_games == 1:
                 wandb.log({
