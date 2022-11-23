@@ -15,6 +15,8 @@ class ProximityCalculator:
             self,
             game: SnakeGameAI,
             n_steps: int,
+            convert_proximity_to_bool: bool,
+            override_proximity_to_bool: bool,
             point_l1: Point,
             point_r1: Point,
             point_u1: Point,
@@ -23,24 +25,33 @@ class ProximityCalculator:
         if n_steps == -1:
             return []
 
-        proximity_to_body_vec_0 = self.get_proximity_to_body(game.direction, game.head, game.snake, game.w, game.h)
+        proximity_vec = self.get_proximity_to_body(game.direction, game.head, game.snake, game.w, game.h)
 
-        if n_steps == 0:
-            return proximity_to_body_vec_0
+        if n_steps > 0:
+            proximity_vec_ahead = [
+                self.get_proximity_wrapper(
+                    game=game,
+                    turn=turn,
+                    n_steps=n_steps,
+                    calc_border=False,
+                    point_l1=point_l1,
+                    point_r1=point_r1,
+                    point_u1=point_u1,
+                    point_d1=point_d1,
+                ) for turn in [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+            ]
 
-        proximity_vec_ahead = [
-            self.get_proximity_wrapper(
-                game=game,
-                turn=turn,
-                n_steps=n_steps,
-                calc_border=False,
-                point_l1=point_l1,
-                point_r1=point_r1,
-                point_u1=point_u1,
-                point_d1=point_d1,
-            ) for turn in [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-        ]
-        return [*proximity_to_body_vec_0, *flatten(proximity_vec_ahead)]
+            proximity_vec.extend(flatten(proximity_vec_ahead))
+
+        if convert_proximity_to_bool:
+            if override_proximity_to_bool:
+                proximity_vec = [prox < 1 for prox in proximity_vec]
+            else:
+                bool_proximity_vec = [prox < 1 for prox in proximity_vec]
+                proximity_vec.extend(bool_proximity_vec)
+
+
+        return proximity_vec
 
     @staticmethod
     def get_proximity_to_border(point: Point, direction: Direction, w, h) -> float:

@@ -127,13 +127,6 @@ class Agent:
             point_l1, point_r1, point_u1, point_d1,
         )
 
-        if self.convert_proximity_to_bool:
-            if self.override_proximity_to_bool:
-                distance_to_body_vec = [prox < 1 for prox in distance_to_body_vec]
-            else:
-                bool_proximity_vec = [prox < 1 for prox in distance_to_body_vec]
-                distance_to_body_vec.extend(bool_proximity_vec)
-
         snake_len = len(game.snake)
 
         state = [
