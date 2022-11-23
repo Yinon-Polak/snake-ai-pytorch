@@ -30,6 +30,7 @@ class Linear_QNet(nn.Module):
         self.ud = []
         self.last_game_active = None
         self.n_games = 0
+        self.last_game_active = torch.zeros(hidden_size)
         self.non_active_neurons_area_above_curve = None
 
     def forward(self, input_x):
@@ -42,11 +43,11 @@ class Linear_QNet(nn.Module):
                 self.initial_x = input_x.clone().detach()
                 self.initial_weights = self.linear1.weight.clone().detach()
                 self.initial_bias = self.linear1.bias.clone().detach()
-                self.last_game_active = torch.zeros(activations.shape[0])
 
             if input_x.ndim == 2 and input_x.shape[0] > 1:
                 mask = activations.max(0).values.squeeze() > 0
                 self.last_game_active[mask] = self.n_games
+
                 total_area = self.n_games * self.last_game_active.shape[0]
                 self.non_active_neurons_area_above_curve = (total_area - self.last_game_active.sum()) / total_area
 
