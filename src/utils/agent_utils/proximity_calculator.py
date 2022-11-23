@@ -1,5 +1,7 @@
 from typing import List
 
+import numpy as np
+
 from src.game import SnakeGameAI, head_to_global_direction
 from src.utils.utils import flatten
 from src.wrappers import Point, Direction
@@ -17,6 +19,8 @@ class ProximityCalculator:
             n_steps: int,
             convert_proximity_to_bool: bool,
             override_proximity_to_bool: bool,
+            add_prox_preferred_turn_0: bool,
+            add_prox_preferred_turn_1: bool,
             point_l1: Point,
             point_r1: Point,
             point_u1: Point,
@@ -43,6 +47,13 @@ class ProximityCalculator:
 
             proximity_vec.extend(flatten(proximity_vec_ahead))
 
+        preferred_turns = []
+        if add_prox_preferred_turn_0:
+            preferred_turns = self.calc_preferred_turns_0(proximity_vec)
+
+        if add_prox_preferred_turn_1:
+            preferred_turns = self.calc_preferred_turns_1(proximity_vec)
+
         if convert_proximity_to_bool:
             if override_proximity_to_bool:
                 proximity_vec = [prox < 1 for prox in proximity_vec]
@@ -50,6 +61,7 @@ class ProximityCalculator:
                 bool_proximity_vec = [prox < 1 for prox in proximity_vec]
                 proximity_vec.extend(bool_proximity_vec)
 
+        proximity_vec.extend(preferred_turns)
 
         return proximity_vec
 
@@ -183,3 +195,33 @@ class ProximityCalculator:
         if direction == Direction.RIGHT: return point_r2
         if direction == Direction.UP: return point_u2
         if direction == Direction.DOWN: return point_d2
+
+    @staticmethod
+    def calc_preferred_turns_0(proximity_vec) -> List[int]:
+        preferred_turns = []
+        for i in range(0, len(proximity_vec), 3):
+            sub_vec = proximity_vec[i:i+3]
+            if min(sub_vec) == 1:
+                preferred_turns.extend([0, 0, 1])
+                continue
+
+            a = np.argmin(sub_vec)
+            if a == 0:
+                preferred_turns.extend([1, 0, 0])
+            elif a == 1:
+                preferred_turns.extend([0, 1, 0])
+            else:
+                preferred_turns.extend([0, 0, 0])
+
+        return preferred_turns
+
+    @staticmethod
+    def calc_preferred_turns_1(proximity_vec) -> List[int]:
+        preferred_turns = []
+        for i in range(0, len(proximity_vec), 3):
+            preferred_turns.append(int(proximity_vec[i] > proximity_vec[i+1]))
+            preferred_turns.append(int(proximity_vec[i] > proximity_vec[i+2]))
+            preferred_turns.append(int(proximity_vec[i+1] > proximity_vec[i+2]))
+            preferred_turns.append(int(min(proximity_vec[i:i+3]) == 1))
+
+        return preferred_turns

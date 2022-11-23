@@ -39,7 +39,9 @@ DEFAULT_AGENT_KWARGS = {
     'scheduler_gamma': 0.1,
     'override_proximity_to_bool': True,
     'init_kaiming_normal': False,
-    'activation_func': F.relu
+    'activation_func': F.relu,
+    'add_prox_preferred_turn_0': False,
+    'add_prox_preferred_turn_1': False,
 }
 
 
@@ -90,6 +92,8 @@ class Agent:
         self.min_len_snake_at_update: int = params['min_len_snake_at_update']
         self.scheduler_step_size: int = params['scheduler_step_size']
         self.scheduler_gamma: int = params['scheduler_gamma']
+        self.add_prox_preferred_turn_0: bool = params['add_prox_preferred_turn_0']
+        self.add_prox_preferred_turn_1: bool = params['add_prox_preferred_turn_1']
 
         self.init_kaiming_normal: bool = params['init_kaiming_normal']
         self.activation_func: any = params['activation_func']
@@ -124,6 +128,10 @@ class Agent:
         distance_to_body_vec = ProximityCalculator().calc_proximity(
             game,
             self.n_steps_proximity_check,
+            self.convert_proximity_to_bool,
+            self.override_proximity_to_bool,
+            self.add_prox_preferred_turn_0,
+            self.add_prox_preferred_turn_1,
             point_l1, point_r1, point_u1, point_d1,
         )
 
@@ -339,16 +347,20 @@ if __name__ == '__main__':
     wandb_mode = "online"
 
     run_settings = [
-        RunSettings(
-                "test",
-                "test logging of activations AAC",
-                "",
-                {
-                    "n_steps_proximity_check": 0,
-                    "convert_proximity_to_bool": True,
-                },
-                wandb_mode
-        ),
+        *RunSettings(
+            "test",
+            "add_prox_preferred_turn_0",
+            "add_prox_preferred_turn_0 is a one hot encoding of argmin, of a 3 way truns proximity distance",
+            {
+                "max_games": 4_000,
+                "n_steps_proximity_check": 0,
+                "convert_proximity_to_bool": True,
+                "add_prox_preferred_turn_0": True,
+                "add_prox_preferred_turn_1": False,
+            },
+            wandb_mode
+        ).generate_instances(3),
     ]
+
     for rs in run_settings:
         train(rs)
