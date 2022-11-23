@@ -1,3 +1,4 @@
+import copy
 import dataclasses
 import logging
 import random
@@ -59,47 +60,46 @@ class Agent:
         :param max_update_steps:
         :param kwargs:
         """
-        if kwargs:
-            DEFAULT_AGENT_KWARGS.update(kwargs)
-            kwargs = DEFAULT_AGENT_KWARGS
-        else:
-            kwargs = DEFAULT_AGENT_KWARGS
 
-        self.k = kwargs
+        params = copy.deepcopy(DEFAULT_AGENT_KWARGS)
+        if kwargs:
+            params.update(kwargs)
+
+        self.params = params
 
         self.collision_calculator = CollisionCalculator(BLOCK_SIZE)
 
         self.n_games: int = 0
-        # self.n_features: int = kwargs["n_features"]
-        self.max_games: int = kwargs['max_games']
-        self.gamma: float = kwargs['gamma']
-        self.lr: float = kwargs['lr']
-        self.batch_size: int = kwargs['batch_size']
-        self.max_memory: int = kwargs['max_memory']
-        self.n_steps_collision_check: int = kwargs['n_steps_collision_check']
-        self.collision_types: List[CollisionType] = kwargs['collision_types']
-        self.model_hidden_size_l1: int = kwargs['model_hidden_size_l1']
-        # self.non_zero_memory: Deque[int] = kwargs.get('non_zero_memory', deque(maxlen=self.max_memory))
-        self.n_steps_proximity_check: int = kwargs['n_steps_proximity_check']
-        self.random_scale: int = kwargs['random_scale']
-        self.starting_epsilon: int = kwargs['starting_epsilon']  # self.n_games_exploration
-        self.max_update_end_steps: int = kwargs['max_update_end_steps']
-        self.max_update_start_steps: int = kwargs['max_update_start_steps']
-        self.convert_proximity_to_bool: bool = kwargs['convert_proximity_to_bool']
-        self.override_proximity_to_bool: bool = kwargs['override_proximity_to_bool']
-        self.min_len_snake_at_update: int = kwargs['min_len_snake_at_update']
-        self.scheduler_step_size: int = kwargs['scheduler_step_size']
-        self.scheduler_gamma: int = kwargs['scheduler_gamma']
+        # self.n_features: int = params["n_features"]
+        self.max_games: int = params['max_games']
+        self.gamma: float = params['gamma']
+        self.lr: float = params['lr']
+        self.batch_size: int = params['batch_size']
+        self.max_memory: int = params['max_memory']
+        self.n_steps_collision_check: int = params['n_steps_collision_check']
+        self.collision_types: List[CollisionType] = params['collision_types']
+        self.model_hidden_size_l1: int = params['model_hidden_size_l1']
+        # self.non_zero_memory: Deque[int] = params.get('non_zero_memory', deque(maxlen=self.max_memory))
+        self.n_steps_proximity_check: int = params['n_steps_proximity_check']
+        self.random_scale: int = params['random_scale']
+        self.starting_epsilon: int = params['starting_epsilon']  # self.n_games_exploration
+        self.max_update_end_steps: int = params['max_update_end_steps']
+        self.max_update_start_steps: int = params['max_update_start_steps']
+        self.convert_proximity_to_bool: bool = params['convert_proximity_to_bool']
+        self.override_proximity_to_bool: bool = params['override_proximity_to_bool']
+        self.min_len_snake_at_update: int = params['min_len_snake_at_update']
+        self.scheduler_step_size: int = params['scheduler_step_size']
+        self.scheduler_gamma: int = params['scheduler_gamma']
 
-        self.init_kaiming_normal: bool = kwargs['init_kaiming_normal']
-        self.activation_func: any = kwargs['activation_func']
+        self.init_kaiming_normal: bool = params['init_kaiming_normal']
+        self.activation_func: any = params['activation_func']
 
         self.memory = deque(maxlen=self.max_memory)  # popleft()
 
         self.last_scores = deque(maxlen=1000)
 
         self.n_features = len(self.get_state(game))
-        self.k['n_features'] = self.n_features
+        self.params['n_features'] = self.n_features
         self.model = Linear_QNet(input_size=self.n_features, hidden_size=self.model_hidden_size_l1, output_size=3, activation_func=self.activation_func, init_kaiming_normal=self.init_kaiming_normal)
         self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma, scheduler_step_size=self.scheduler_step_size, scheduler_gamma=self.scheduler_gamma)
         self.should_update_rewards = self.max_update_start_steps > 0 or self.max_update_end_steps > 0
@@ -266,7 +266,7 @@ def train(run_settings: Optional[RunSettings] = None):
             group=run_settings.group,
             name=str(run_settings.index),
             notes=run_settings.note,
-            config=agent.k,
+            config=agent.params,
             settings=run_settings.wandb_setttings,
             mode=run_settings.wandb_mode,
         )
