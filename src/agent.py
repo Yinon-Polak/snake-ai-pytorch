@@ -349,8 +349,8 @@ if __name__ == '__main__':
     run_settings = [
         *RunSettings(
             "test",
-            "add_prox_preferred_turn_0",
-            "add_prox_preferred_turn_0 is a one hot encoding of argmin, of a 3 way truns proximity distance",
+            "add box",
+            "",
             {
                 "max_games": 4_000,
                 "n_steps_proximity_check": 0,
