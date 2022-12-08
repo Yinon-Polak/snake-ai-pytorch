@@ -1,6 +1,5 @@
 import copy
 import random
-from typing import List
 
 import numpy as np
 import wandb
@@ -52,6 +51,8 @@ class SnakeGameAIGym(gym.Env):
         _kwargs = copy.deepcopy(KWARGS)
         _kwargs.update(kwargs)
 
+        print(f'kwargs:', _kwargs)
+
         self.positive_reward = _kwargs["positive_reward"]
         self.negative_reward = _kwargs["negative_reward"]
         self.w = _kwargs["w"]
@@ -73,30 +74,9 @@ class SnakeGameAIGym(gym.Env):
         self.n_games = 0
         ####
 
-        self.action_space = spaces.Discrete(3)
-        self.observation_space = Dict({
-            "is_first_episode_step": Discrete(2),
-            "len_episode": Box(low=np.array([0.0]), high=np.array([1.0]), dtype=np.float32),
-            "len_snake":  Box(low=np.array([0.0]), high=np.array([1.0]), dtype=np.float32),
-            "prox_s": Discrete(2),
-            "prox_r": Discrete(2),
-            "prox_l": Discrete(2),
-            "collision_s": Discrete(2),
-            "collision_r": Discrete(2),
-            "collision_l": Discrete(2),
-            "dir_l": Discrete(2),
-            "dir_r": Discrete(2),
-            "dir_u": Discrete(2),
-            "dir_d": Discrete(2),
-            "food_left": Discrete(2),
-            "food_right": Discrete(2),
-            "food_up": Discrete(2),
-            "food_down": Discrete(2),
-        })
-        # self.reset()
         self.proximity_calculator = ProximityCalculator()
         self.collision_calculator = CollisionCalculator(BLOCK_SIZE)
-        self.collision_types = _kwargs["collision_types"]
+        self.collision_types = _kwargs["collision_types"] if isinstance(_kwargs["collision_types"], list) else list(_kwargs["collision_types"])
         self.n_steps_collision_check = _kwargs["n_steps_collision_check"]
         self.n_steps_proximity_check = _kwargs["n_steps_proximity_check"]
         self.convert_proximity_to_bool = _kwargs["convert_proximity_to_bool"]
@@ -104,11 +84,43 @@ class SnakeGameAIGym(gym.Env):
         self.add_prox_preferred_turn_0 = _kwargs["add_prox_preferred_turn_0"]
         self.add_prox_preferred_turn_1 = _kwargs["add_prox_preferred_turn_1"]
 
-    def _get_state(self):
+        self.action_space = spaces.Discrete(3)
+        self.reset()
+        initial_state = self._get_features()
+        gym_spaces_mapping = {}
+        for k, v in initial_state.items():
+            if isinstance(v, int):
+                gym_spaces_mapping[k] = Discrete(2)
+            elif isinstance(v, float):
+                gym_spaces_mapping[k] = Box(low=np.array([0.0]), high=np.array([1.0]), dtype=np.float32)
+            else:
+                raise Exception("type not supported")
 
+        self.observation_space = Dict(gym_spaces_mapping)
+
+    def _get_features(self):
         dir_l, dir_r, dir_u, dir_d = self.collision_calculator.get_direction_bool_vector(self.direction)
         head = self.snake[0]
         point_l1, point_r1, point_u1, point_d1 = self.collision_calculator.get_sorounding_points(head, c=1)
+
+        snake_len = len(self.snake)
+        len_episode = len(self.last_trail) / self.n_blocks
+        normalized_len_snake = snake_len / self.n_blocks
+        is_first_episode_step = len(self.last_trail) == 0
+
+        features = {
+            "is_first_episode_step": int(is_first_episode_step),
+            "dir_l": int(dir_l),
+            "dir_r": int(dir_r),
+            "dir_u": int(dir_u),
+            "dir_d": int(dir_d),
+            "food_left": int(self.food.x < self.head.x),  # food left
+            "food_right": int(self.food.x > self.head.x),  # food right
+            "food_up": int(self.food.y < self.head.y),  # food up
+            "food_down": int(self.food.y > self.head.y),  # food down
+            "len_episode": len_episode,
+            "len_snake": normalized_len_snake,
+        }
 
         collisions_vec = self.collision_calculator.clac_collision_vec_by_type(
             self,
@@ -131,56 +143,24 @@ class SnakeGameAIGym(gym.Env):
             point_l1, point_r1, point_u1, point_d1,
         )
 
-        snake_len = len(self.snake)
+        c = 0
+        for i in range(0, len(collisions_vec), 3):
+            features[f"collision_s_{c}"] = int(collisions_vec[i])
+            features[f"collision_r_{c}"] = int(collisions_vec[i+1])
+            features[f"collision_l_{c}"] = int(collisions_vec[i+2])
+            c += 1
 
-        state_0 = [
-            len(self.last_trail) == 0,
+        c = 0
+        for i in range(0, len(distance_to_body_vec), 3):
+            features[f"prox_s_{c}"] = int(distance_to_body_vec[i]) if self.convert_proximity_to_bool else distance_to_body_vec[i]
+            features[f"prox_r_{c}"] = int(distance_to_body_vec[i+1]) if self.convert_proximity_to_bool else distance_to_body_vec[i+1]
+            features[f"prox_l_{c}"] = int(distance_to_body_vec[i+2]) if self.convert_proximity_to_bool else distance_to_body_vec[i+2]
+            c += 1
 
-            # distance to body
-            *distance_to_body_vec,
+        return features
 
-            # is collision
-            *collisions_vec,
-
-            # Move direction
-            dir_l,
-            dir_r,
-            dir_u,
-            dir_d,
-
-            # Food location
-            self.food.x < self.head.x,  # food left
-            self.food.x > self.head.x,  # food right
-            self.food.y < self.head.y,  # food up
-            self.food.y > self.head.y,  # food down
-
-            len(self.last_trail) / self.n_blocks,
-            snake_len / self.n_blocks,
-        ]
-
-        self.sum_score = 0
-        self.n_games = 0
-
-        state_dict = {
-            "is_first_episode_step": int(state_0[0]),
-            "prox_s": int(state_0[1]),
-            "prox_r": int(state_0[2]),
-            "prox_l": int(state_0[3]),
-            "collision_s": int(state_0[4]),
-            "collision_r": int(state_0[5]),
-            "collision_l": int(state_0[6]),
-            "dir_l": int(state_0[7]),
-            "dir_r": int(state_0[8]),
-            "dir_u": int(state_0[9]),
-            "dir_d": int(state_0[10]),
-            "food_left": int(state_0[11]),
-            "food_right": int(state_0[12]),
-            "food_up": int(state_0[13]),
-            "food_down": int(state_0[14]),
-            "len_episode": state_0[15],  # np.array(state_0[1], dtype=np.float32),
-            "len_snake": state_0[16],  # np.array(state_0[2], dtype=np.float32),
-        }
-        return state_dict
+    def _get_state(self):
+        return self._get_features()
 
     def step(self, action):
         return self.play_step(action)
@@ -324,7 +304,7 @@ if __name__ == '__main__':
     }
     run = wandb.init(
         project="test",
-        name="test",
+        name="auto spaces dict init",
         config=config,
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
