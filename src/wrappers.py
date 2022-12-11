@@ -1,4 +1,5 @@
 from collections import namedtuple
+from dataclasses import dataclass
 from enum import Enum
 
 
@@ -11,4 +12,15 @@ class Direction(Enum):
 
 CLOCK_WISE = [Direction.RIGHT, Direction.DOWN, Direction.LEFT, Direction.UP]
 
-Point = namedtuple('Point', 'x, y')
+
+@dataclass
+class Point:
+    x: int
+    y: int
+    block_size: int = 20
+
+    def _pixel_index(self, a):
+        return int(a // self.block_size) + 1  # add one for border, the range of x is (-20,w), for y its (-20,h)
+
+    def get_y_x_0_tuple(self):
+        return self._pixel_index(self.y), self._pixel_index(self.x), 0

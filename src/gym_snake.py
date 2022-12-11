@@ -58,7 +58,10 @@ class SnakeGameAIGym(gym.Env):
         self.w = _kwargs["w"]
         self.h = _kwargs["h"]
         self.use_pygame = _kwargs["use_pygame"]
-        self.n_blocks = (self.w / 20) * (self.h / 20)
+        self.w_pixels = int(self.w / BLOCK_SIZE)
+        self.h_pixels = int(self.h / BLOCK_SIZE)
+        self.n_blocks = self.w_pixels * self.h_pixels
+        self.screen_mat_shape = (self.h_pixels + 2, self.w_pixels + 2, 1)
         self.pygame_controller = PygameController(self.w, self.h,
                                                   BLOCK_SIZE) if self.use_pygame else DummyPygamController()
 
@@ -74,17 +77,16 @@ class SnakeGameAIGym(gym.Env):
         self.n_games = 0
         ####
 
-        self.proximity_calculator = ProximityCalculator()
-        self.collision_calculator = CollisionCalculator(BLOCK_SIZE)
-        self.collision_types = _kwargs["collision_types"] if isinstance(_kwargs["collision_types"], list) else list(_kwargs["collision_types"])
-        self.n_steps_collision_check = _kwargs["n_steps_collision_check"]
-        self.n_steps_proximity_check = _kwargs["n_steps_proximity_check"]
-        self.convert_proximity_to_bool = _kwargs["convert_proximity_to_bool"]
-        self.override_proximity_to_bool = _kwargs["override_proximity_to_bool"]
-        self.add_prox_preferred_turn_0 = _kwargs["add_prox_preferred_turn_0"]
-        self.add_prox_preferred_turn_1 = _kwargs["add_prox_preferred_turn_1"]
+        self.pixel_color_border = 1
+        self.pixel_color_background = 64
+        self.pixel_color_body = 128
+        self.pixel_color_snake_head = 192
+        self.pixel_color_food = 255
+
 
         self.action_space = spaces.Discrete(3)
+        self.observation_space = Box(low=0, high=255, shape=self.screen_mat_shape, dtype=np.uint8)
+
         self.reset()
         initial_state = self._get_features()
         gym_spaces_mapping = {}
@@ -160,7 +162,25 @@ class SnakeGameAIGym(gym.Env):
         return features
 
     def _get_state(self):
-        return self._get_features()
+        # try:
+            pixel_mat = np.zeros(self.screen_mat_shape)
+            pixel_mat += self.pixel_color_background
+
+            # border
+            pixel_mat[0, :] = self.pixel_color_border
+            pixel_mat[-1, :] = self.pixel_color_border
+            pixel_mat[:, 0] = self.pixel_color_border
+            pixel_mat[:, -1] = self.pixel_color_border
+
+            pixel_mat[self.food.get_y_x_0_tuple()] = self.pixel_color_food
+            for body_point in self.snake:
+                pixel_mat[body_point.get_y_x_0_tuple()] = self.pixel_color_body
+
+            pixel_mat[self.head.get_y_x_0_tuple()] = self.pixel_color_snake_head
+            return pixel_mat.astype(np.uint8)
+
+        # except Exception as e:
+        #     print(e)
 
     def step(self, action):
         return self.play_step(action)
