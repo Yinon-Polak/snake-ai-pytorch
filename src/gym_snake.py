@@ -3,6 +3,7 @@ import random
 
 import numpy as np
 import wandb
+from gym.utils.env_checker import check_env
 from gym.wrappers import RecordEpisodeStatistics
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.policies import MultiInputActorCriticPolicy
@@ -10,6 +11,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecEnv
 
 from src.collision_type import CollisionType
 from src.pygame_controller.pygame_controller import PygameController, DummyPygamController
+from src.small_cnn_policy import ActorCriticSmallCnnPolicy
 from src.utils.agent_utils.collision_calculator import CollisionCalculator
 from src.utils.agent_utils.proximity_calculator import ProximityCalculator
 from src.wrappers import Direction, Point, CLOCK_WISE
@@ -88,78 +90,6 @@ class SnakeGameAIGym(gym.Env):
         self.observation_space = Box(low=0, high=255, shape=self.screen_mat_shape, dtype=np.uint8)
 
         self.reset()
-        initial_state = self._get_features()
-        gym_spaces_mapping = {}
-        for k, v in initial_state.items():
-            if isinstance(v, int):
-                gym_spaces_mapping[k] = Discrete(2)
-            elif isinstance(v, float):
-                gym_spaces_mapping[k] = Box(low=np.array([0.0]), high=np.array([1.0]), dtype=np.float32)
-            else:
-                raise Exception("type not supported")
-
-        self.observation_space = Dict(gym_spaces_mapping)
-
-    def _get_features(self):
-        dir_l, dir_r, dir_u, dir_d = self.collision_calculator.get_direction_bool_vector(self.direction)
-        head = self.snake[0]
-        point_l1, point_r1, point_u1, point_d1 = self.collision_calculator.get_sorounding_points(head, c=1)
-
-        snake_len = len(self.snake)
-        len_episode = len(self.last_trail) / self.n_blocks
-        normalized_len_snake = snake_len / self.n_blocks
-        is_first_episode_step = len(self.last_trail) == 0
-
-        features = {
-            "is_first_episode_step": int(is_first_episode_step),
-            "dir_l": int(dir_l),
-            "dir_r": int(dir_r),
-            "dir_u": int(dir_u),
-            "dir_d": int(dir_d),
-            "food_left": int(self.food.x < self.head.x),  # food left
-            "food_right": int(self.food.x > self.head.x),  # food right
-            "food_up": int(self.food.y < self.head.y),  # food up
-            "food_down": int(self.food.y > self.head.y),  # food down
-            "len_episode": len_episode,
-            "len_snake": normalized_len_snake,
-        }
-
-        collisions_vec = self.collision_calculator.clac_collision_vec_by_type(
-            self,
-            self.collision_types,
-            point_l1,
-            point_r1,
-            point_u1,
-            point_d1,
-            self.n_steps_collision_check
-        )
-
-        # distance to body
-        distance_to_body_vec = ProximityCalculator().calc_proximity(
-            self,
-            self.n_steps_proximity_check,
-            self.convert_proximity_to_bool,
-            self.override_proximity_to_bool,
-            self.add_prox_preferred_turn_0,
-            self.add_prox_preferred_turn_1,
-            point_l1, point_r1, point_u1, point_d1,
-        )
-
-        c = 0
-        for i in range(0, len(collisions_vec), 3):
-            features[f"collision_s_{c}"] = int(collisions_vec[i])
-            features[f"collision_r_{c}"] = int(collisions_vec[i+1])
-            features[f"collision_l_{c}"] = int(collisions_vec[i+2])
-            c += 1
-
-        c = 0
-        for i in range(0, len(distance_to_body_vec), 3):
-            features[f"prox_s_{c}"] = int(distance_to_body_vec[i]) if self.convert_proximity_to_bool else distance_to_body_vec[i]
-            features[f"prox_r_{c}"] = int(distance_to_body_vec[i+1]) if self.convert_proximity_to_bool else distance_to_body_vec[i+1]
-            features[f"prox_l_{c}"] = int(distance_to_body_vec[i+2]) if self.convert_proximity_to_bool else distance_to_body_vec[i+2]
-            c += 1
-
-        return features
 
     def _get_state(self):
         # try:
@@ -237,7 +167,7 @@ class SnakeGameAIGym(gym.Env):
             self.score += 1
             reward = self.positive_reward
             self._place_food()
-            # self.last_trail.clear()  # todo make sure this is being cleared
+
         else:
             crumb = self.snake.pop()
             self.trail.insert(0, crumb)
@@ -275,7 +205,7 @@ class SnakeGameAIGym(gym.Env):
         return False
 
     def _move(self, action):
-        if isinstance(action, np.int64):
+        if isinstance(action, np.int64) or isinstance(action, int):
             action_list = [0, 0, 0]
             action_list[action] = 1
             action = action_list
@@ -315,26 +245,31 @@ def head_to_global_direction(current_direction, action) -> Direction:
     return new_dir
 
 
+
 if __name__ == '__main__':
     env_name = "snake-ai-gym-v1"
     config = {
-        "policy_type": "MultiInputPolicy",
+        # "policy_type": "CnnPolicy",
+        "policy_type": ActorCriticSmallCnnPolicy,
         "total_timesteps": 5_000_000,
         "env_name": env_name,
     }
     run = wandb.init(
         project="test",
-        name="auto spaces dict init",
+        name="cnn",
         config=config,
         sync_tensorboard=True,  # auto-upload sb3's tensorboard metrics
         # monitor_gym=True,  # auto-upload the videos of agents playing the game
         # save_code=True,  # optional
+
     )
 
     vec_env = make_vec_env(vec_env_cls=DummyVecEnv, env_id=SnakeGameAIGym, wrapper_class=RecordEpisodeStatistics,
-                           n_envs=15)
+                           n_envs=1)
     # vec_env = RecordEpisodeStatistics(vec_env)
     vec_env = CostumeWandbVecEnvLogger(vec_env)
+
+    # check_env(SnakeGameAIGym())
 
     model = A2C(
         config["policy_type"],
