@@ -27,6 +27,14 @@ from torch import nn
 
 from src.gym_ext.info_vec_env_wrapper import CostumeWandbEnvLogger, CostumeWandbVecEnvLogger
 
+# rgb colors
+WHITE = (255, 255, 255)
+RED = (255, 0, 0)
+BLUE1 = (0, 0, 255)
+BLUE2 = (0, 100, 255)
+GREEN = (0,255,0)
+BLACK = (0, 0, 0)
+
 BLOCK_SIZE = 20
 
 KWARGS = {
@@ -63,7 +71,7 @@ class SnakeGameAIGym(gym.Env):
         self.w_pixels = int(self.w / BLOCK_SIZE)
         self.h_pixels = int(self.h / BLOCK_SIZE)
         self.n_blocks = self.w_pixels * self.h_pixels
-        self.screen_mat_shape = (self.h_pixels + 2, self.w_pixels + 2, 1)
+        self.screen_mat_shape = (self.h_pixels + 2, self.w_pixels + 2, 3)
         self.pygame_controller = PygameController(self.w, self.h,
                                                   BLOCK_SIZE) if self.use_pygame else DummyPygamController()
 
@@ -79,11 +87,11 @@ class SnakeGameAIGym(gym.Env):
         self.n_games = 0
         ####
 
-        self.pixel_color_border = 1
-        self.pixel_color_background = 64
-        self.pixel_color_body = 128
-        self.pixel_color_snake_head = 192
-        self.pixel_color_food = 255
+        self.pixel_color_border = np.array(BLACK)
+        self.pixel_color_background = np.array(WHITE)
+        self.pixel_color_body = np.array(BLUE1)
+        self.pixel_color_snake_head = np.array(GREEN)
+        self.pixel_color_food = np.array(RED)
 
 
         self.action_space = spaces.Discrete(3)
@@ -94,7 +102,7 @@ class SnakeGameAIGym(gym.Env):
     def _get_state(self):
         # try:
             pixel_mat = np.zeros(self.screen_mat_shape)
-            pixel_mat += self.pixel_color_background
+            pixel_mat[:, :] = self.pixel_color_background
 
             # border
             pixel_mat[0, :] = self.pixel_color_border
@@ -102,14 +110,18 @@ class SnakeGameAIGym(gym.Env):
             pixel_mat[:, 0] = self.pixel_color_border
             pixel_mat[:, -1] = self.pixel_color_border
 
-            pixel_mat[self.food.get_y_x_0_tuple()] = self.pixel_color_food
+            pixel_mat[self.food.get_y_x_tuple()] = self.pixel_color_food
             for body_point in self.snake:
-                pixel_mat[body_point.get_y_x_0_tuple()] = self.pixel_color_body
+                pixel_mat[body_point.get_y_x_tuple()] = self.pixel_color_body
 
-            pixel_mat[self.head.get_y_x_0_tuple()] = self.pixel_color_snake_head
+            pixel_mat[self.head.get_y_x_tuple()] = self.pixel_color_snake_head
             return pixel_mat.astype(np.uint8)
 
+
         # except Exception as e:
+        #     import matplotlib.pyplot as plt
+        #     plt.imshow(pixel_mat / 255, cmap='Greys', interpolation='nearest')
+        #     plt.show()
         #     print(e)
 
     def step(self, action):
