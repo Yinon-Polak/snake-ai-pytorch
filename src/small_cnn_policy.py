@@ -33,13 +33,38 @@ class NatureSmallCNN(BaseFeaturesExtractor):
             "please check it using our env checker:\n"
             "https://stable-baselines3.readthedocs.io/en/master/common/env_checker.html"
         )
+
+        initial_layer_out_channels = 32
+        deep_layers_out_channels = 64
+        kernel_size_1 = 4
+        kernel_size_2 = 3
+        kernel_size_3 = 2
+        padding_1 = 1
+        padding_2 = 0
+        padding_3 = 0
+        stride_1 = 1
+        stride_2 = 1
+        stride_3 = 1
+
+        print(f"initial_layer_out_channels ={initial_layer_out_channels}")
+        print(f"deep_layers_out_channels = {deep_layers_out_channels}")
+        print(f"kernel_size_1={kernel_size_1}")
+        print(f"kernel_size_2={kernel_size_2}")
+        print(f"kernel_size_3={kernel_size_3}")
+        print(f"padding_1={padding_1}")
+        print(f"padding_2={padding_2}")
+        print(f"padding_3={padding_3}")
+        print(f"stride_1={stride_1}")
+        print(f"stride_2={stride_2}")
+        print(f"stride_3={stride_3}")
+
         n_input_channels = observation_space.shape[0]
         self.cnn = nn.Sequential(
-            nn.Conv2d(n_input_channels, 8, kernel_size=4, stride=1, padding=1),
+            nn.Conv2d(n_input_channels, initial_layer_out_channels, kernel_size=kernel_size_1, stride=stride_1, padding=padding_1),
             nn.ReLU(),
-            nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=0),
+            nn.Conv2d(initial_layer_out_channels, deep_layers_out_channels, kernel_size=kernel_size_2, stride=stride_2, padding=padding_2),
             nn.ReLU(),
-            nn.Conv2d(16, 16, kernel_size=2, stride=1, padding=0),
+            nn.Conv2d(deep_layers_out_channels, deep_layers_out_channels, kernel_size=kernel_size_3, stride=stride_3, padding=padding_3),
             nn.ReLU(),
             nn.Flatten(),
         )
