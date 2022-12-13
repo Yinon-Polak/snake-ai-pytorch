@@ -12,6 +12,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, VecEnv
 from src.collision_type import CollisionType
 from src.pygame_controller.pygame_controller import PygameController, DummyPygamController
 from src.small_cnn_policy import ActorCriticSmallCnnPolicy
+from src.tensorboard_callback import TensorboardCallback
 from src.utils.agent_utils.collision_calculator import CollisionCalculator
 from src.utils.agent_utils.proximity_calculator import ProximityCalculator
 from src.wrappers import Direction, Point, CLOCK_WISE
@@ -296,9 +297,9 @@ if __name__ == '__main__':
     model.learn(
         total_timesteps=config["total_timesteps"],
         # n_eval_episodes=3000,
-        callback=WandbCallback(
+        callback=[WandbCallback(
             # model_save_path=f"models/{run.id}",
             verbose=2,
-        ),
+        ), TensorboardCallback()],
     )
     run.finish()
