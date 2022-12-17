@@ -23,7 +23,23 @@ class NatureSmallCNN(BaseFeaturesExtractor):
         This corresponds to the number of unit for the last layer.
     """
 
-    def __init__(self, observation_space: gym.spaces.Box, features_dim: int = 512):
+    def __init__(
+            self,
+            observation_space: gym.spaces.Box,
+            features_dim: int = 512,
+            initial_layer_out_channels: int = 16,
+            deep_layers_out_channels: int = 32,
+            kernel_size_1: int = 8,
+            kernel_size_2: int = 3,
+            kernel_size_3: int = 2,
+            padding_1: int = 1,
+            padding_2: int = 0,
+            padding_3: int = 0,
+            stride_1: int = 1,
+            stride_2: int = 1,
+            stride_3: int = 1,
+            activation_func: nn.Module = nn.LeakyReLU
+    ):
         super().__init__(observation_space, features_dim)
         # We assume CxHxW images (channels first)
         # Re-ordering will be done by pre-preprocessing or wrapper
@@ -36,19 +52,6 @@ class NatureSmallCNN(BaseFeaturesExtractor):
             "https://stable-baselines3.readthedocs.io/en/master/common/env_checker.html"
         )
 
-        initial_layer_out_channels = 16
-        deep_layers_out_channels = 32
-        kernel_size_1 = 8
-        kernel_size_2 = 3
-        kernel_size_3 = 2
-        padding_1 = 1
-        padding_2 = 0
-        padding_3 = 0
-        stride_1 = 1
-        stride_2 = 1
-        stride_3 = 1
-        # activation_func = nn.LeakyReLU
-        activation_func = nn.LeakyReLU
         print(f"initial_layer_out_channels ={initial_layer_out_channels}")
         print(f"deep_layers_out_channels = {deep_layers_out_channels}")
         print(f"kernel_size_1={kernel_size_1}")
