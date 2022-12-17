@@ -8,6 +8,8 @@ from stable_baselines3.common.type_aliases import Schedule
 from torch import nn
 import torch as th
 
+from src.utils.model.debug_activation_layer import DebugActivationLayer
+
 
 class NatureSmallCNN(BaseFeaturesExtractor):
     """
@@ -34,9 +36,9 @@ class NatureSmallCNN(BaseFeaturesExtractor):
             "https://stable-baselines3.readthedocs.io/en/master/common/env_checker.html"
         )
 
-        initial_layer_out_channels = 32
-        deep_layers_out_channels = 64
-        kernel_size_1 = 4
+        initial_layer_out_channels = 16
+        deep_layers_out_channels = 32
+        kernel_size_1 = 8
         kernel_size_2 = 3
         kernel_size_3 = 2
         padding_1 = 1
@@ -45,7 +47,8 @@ class NatureSmallCNN(BaseFeaturesExtractor):
         stride_1 = 1
         stride_2 = 1
         stride_3 = 1
-
+        # activation_func = nn.LeakyReLU
+        activation_func = nn.LeakyReLU
         print(f"initial_layer_out_channels ={initial_layer_out_channels}")
         print(f"deep_layers_out_channels = {deep_layers_out_channels}")
         print(f"kernel_size_1={kernel_size_1}")
@@ -57,15 +60,19 @@ class NatureSmallCNN(BaseFeaturesExtractor):
         print(f"stride_1={stride_1}")
         print(f"stride_2={stride_2}")
         print(f"stride_3={stride_3}")
+        print(f"activation func: {activation_func.__name__}")
 
         n_input_channels = observation_space.shape[0]
         self.cnn = nn.Sequential(
             nn.Conv2d(n_input_channels, initial_layer_out_channels, kernel_size=kernel_size_1, stride=stride_1, padding=padding_1),
-            nn.ReLU(),
+            activation_func(),
+            DebugActivationLayer(),
             nn.Conv2d(initial_layer_out_channels, deep_layers_out_channels, kernel_size=kernel_size_2, stride=stride_2, padding=padding_2),
-            nn.ReLU(),
+            activation_func(),
+            DebugActivationLayer(),
             nn.Conv2d(deep_layers_out_channels, deep_layers_out_channels, kernel_size=kernel_size_3, stride=stride_3, padding=padding_3),
-            nn.ReLU(),
+            activation_func(),
+            DebugActivationLayer(),
             nn.Flatten(),
         )
 
@@ -73,7 +80,7 @@ class NatureSmallCNN(BaseFeaturesExtractor):
         with th.no_grad():
             n_flatten = self.cnn(th.as_tensor(observation_space.sample()[None]).float()).shape[1]
 
-        self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim), nn.ReLU())
+        self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim), activation_func(), DebugActivationLayer())
 
     def forward(self, observations: th.Tensor) -> th.Tensor:
         return self.linear(self.cnn(observations))
