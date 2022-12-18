@@ -28,7 +28,7 @@ class DebugActivationLayer(Module):
             mask = input.max(0).values.squeeze() > 0
             last_active_mat = self.shape_to_last_active_mat.setdefault(input_ndim, torch.zeros(mask.shape))
             last_active_mat[mask] = self.n_games
-            total_area = self.n_games * input.nelement()
+            total_area = self.n_games * mask.nelement()
             non_active_neurons_area_above_curve = (total_area - last_active_mat.sum()) / total_area
             self.shape_to_result[input_ndim] = non_active_neurons_area_above_curve.item()
 
