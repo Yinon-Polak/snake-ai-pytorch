@@ -29,7 +29,7 @@ class NatureSmallCNN(BaseFeaturesExtractor):
             features_dim: int = 512,
             initial_layer_out_channels: int = 16,
             deep_layers_out_channels: int = 32,
-            kernel_size_1: int = 8,
+            kernel_size_1: int = 4,
             kernel_size_2: int = 3,
             kernel_size_3: int = 2,
             padding_1: int = 1,
@@ -66,18 +66,24 @@ class NatureSmallCNN(BaseFeaturesExtractor):
         print(f"activation func: {activation_func.__name__}")
 
         n_input_channels = observation_space.shape[0]
-        self.cnn = nn.Sequential(
+        modules = [
             nn.Conv2d(n_input_channels, initial_layer_out_channels, kernel_size=kernel_size_1, stride=stride_1, padding=padding_1),
             activation_func(),
             DebugActivationLayer(),
             nn.Conv2d(initial_layer_out_channels, deep_layers_out_channels, kernel_size=kernel_size_2, stride=stride_2, padding=padding_2),
             activation_func(),
             DebugActivationLayer(),
-            nn.Conv2d(deep_layers_out_channels, deep_layers_out_channels, kernel_size=kernel_size_3, stride=stride_3, padding=padding_3),
-            activation_func(),
-            DebugActivationLayer(),
             nn.Flatten(),
-        )
+        ]
+        if kernel_size_3:
+            modules.extend(
+                [
+                    nn.Conv2d(deep_layers_out_channels, deep_layers_out_channels, kernel_size=kernel_size_3, stride=stride_3, padding=padding_3),
+                    activation_func(),
+                    DebugActivationLayer(),
+                ]
+            )
+        self.cnn = nn.Sequential(*modules)
 
         # Compute shape by doing one forward pass
         with th.no_grad():
