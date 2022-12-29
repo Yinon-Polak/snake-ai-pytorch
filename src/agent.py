@@ -2,9 +2,10 @@ import copy
 import dataclasses
 import logging
 import random
+import warnings
 from collections import deque
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import numpy as np
 import torch
@@ -16,11 +17,11 @@ from src.collision_type import CollisionType
 from src.game import SnakeGameAI, BLOCK_SIZE
 from src.model import Linear_QNet, QTrainer
 from src.utils.agent_utils.collision_calculator import CollisionCalculator
-from src.utils.agent_utils.proximity_calculator import ProximityCalculator
+from src.utils.agent_utils.proximity_calculator import DistanceCalculator
 
 DEFAULT_AGENT_KWARGS = {
     'n_features': 11,
-    'max_games': 4000,
+    'max_games': 5000,
     'gamma': 0.9,
     'lr': 0.001,
     'batch_size': 1_000,
@@ -42,6 +43,7 @@ DEFAULT_AGENT_KWARGS = {
     'activation_func': F.relu,
     'add_prox_preferred_turn_0': False,
     'add_prox_preferred_turn_1': False,
+    'calc_border': True,
 }
 
 
@@ -83,8 +85,12 @@ class Agent:
         self.model_hidden_size_l1: int = params['model_hidden_size_l1']
         # self.non_zero_memory: Deque[int] = params.get('non_zero_memory', deque(maxlen=self.max_memory))
         self.n_steps_proximity_check: int = params['n_steps_proximity_check']
-        self.random_scale: int = params['random_scale']
+        # self.random_scale: int = params['random_scale']
         self.starting_epsilon: int = params['starting_epsilon']  # self.n_games_exploration
+        random_scale = int(self.starting_epsilon * 2.5)
+        warnings.warn(f"overriding random_scale with 2.5*starting_epsilon: int(2.5*{self.starting_epsilon}={random_scale})")
+        self.random_scale = random_scale
+
         self.max_update_end_steps: int = params['max_update_end_steps']
         self.max_update_start_steps: int = params['max_update_start_steps']
         self.convert_proximity_to_bool: bool = params['convert_proximity_to_bool']
@@ -104,10 +110,13 @@ class Agent:
         self.last_scores = deque(maxlen=1000)
 
         self.n_features = len(self.get_state(game))
-        self.params['n_features'] = self.n_features
         self.model = Linear_QNet(input_size=self.n_features, hidden_size=self.model_hidden_size_l1, output_size=3, activation_func=self.activation_func, init_kaiming_normal=self.init_kaiming_normal)
         self.trainer = QTrainer(self.model, lr=self.lr, gamma=self.gamma, scheduler_step_size=self.scheduler_step_size, scheduler_gamma=self.scheduler_gamma)
         self.should_update_rewards = self.max_update_start_steps > 0 or self.max_update_end_steps > 0
+
+        self.params['n_features'] = self.n_features
+        self.params['random_scale'] = self.random_scale
+
 
     def get_state(self, game) -> np.array:
 
@@ -269,7 +278,7 @@ def train(run_settings: Optional[RunSettings] = None):
     # except Exception as e:
     #     print(e)
     #     wandb.watch(agent.model)
-    min_iter_no_learning = 200
+    min_iter_no_learning = agent.starting_epsilon + 500
     mean_score = 0
     while agent.n_games < agent.max_games:
         if agent.n_games > min_iter_no_learning and mean_score < 1:

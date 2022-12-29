@@ -6,11 +6,8 @@ from src.collision_type import CollisionType
 if __name__ == '__main__':
 
     params = {
-        'collision_types': {'values': [[CollisionType.BOTH], [CollisionType.BODY, CollisionType.BORDER]]},
-        'starting_epsilon': {'distribution': 'int_uniform', 'min': 40, 'max': 200, },  # 80,
-        'random_scale': {'distribution': 'int_uniform', 'min': 150, 'max': 500, },  # 200,
-        'max_update_end_steps': {'distribution': 'int_uniform', 'min': 0, 'max': 100, },  # 0,
-        'max_update_start_steps': {'distribution': 'int_uniform', 'min': 0, 'max': 10, },  # 0,
+        'starting_epsilon': {'distribution': 'int_uniform', 'min': 800, 'max': 8000, },
+        'lr': {'distribution': 'log_uniform_values', 'min': 1e-4, 'max': 1e-2, },
     }
 
     method = "bayes"
@@ -22,12 +19,12 @@ if __name__ == '__main__':
             'goal': 'maximize'
         },
         'parameters': params,
-        'early_terminate':  {
+        'early_terminate': {
             'type': 'hyperband',
-            'min_iter': 1500,
+            'min_iter': 15000,
             'eta': 100,
         }
     }
 
     sweep_id = wandb.sweep(sweep_config)
-    wandb.agent(sweep_id, function=train, count=25)
+    wandb.agent(sweep_id, function=train, count=20)
