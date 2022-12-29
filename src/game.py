@@ -3,7 +3,7 @@ import numpy as np
 
 from src.collision_type import CollisionType
 from src.pygame_controller.pygame_controller import PygameController, DummyPygamController
-from src.wrappers import Direction, Point, CLOCK_WISE
+from src.wrappers import Direction, Point, CLOCK_WISE_DIRECTIONS
 
 BLOCK_SIZE = 20
 
@@ -139,15 +139,15 @@ class SnakeGameAI:
 
 def head_to_global_direction(current_direction, action) -> Direction:
     # [straight, right, left]
-    idx = CLOCK_WISE.index(current_direction)
+    idx = CLOCK_WISE_DIRECTIONS.index(current_direction)
 
     if np.array_equal(action, [1, 0, 0]):
-        new_dir = CLOCK_WISE[idx]  # no change
+        new_dir = CLOCK_WISE_DIRECTIONS[idx]  # no change
     elif np.array_equal(action, [0, 1, 0]):
         next_idx = (idx + 1) % 4
-        new_dir = CLOCK_WISE[next_idx]  # right turn r -> d -> l -> u
+        new_dir = CLOCK_WISE_DIRECTIONS[next_idx]  # right turn r -> d -> l -> u
     else:  # [0, 0, 1]
         next_idx = (idx - 1) % 4
-        new_dir = CLOCK_WISE[next_idx]  # left turn r -> u -> l -> d
+        new_dir = CLOCK_WISE_DIRECTIONS[next_idx]  # left turn r -> u -> l -> d
 
     return new_dir

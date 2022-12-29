@@ -94,6 +94,7 @@ class Agent:
         self.scheduler_gamma: int = params['scheduler_gamma']
         self.add_prox_preferred_turn_0: bool = params['add_prox_preferred_turn_0']
         self.add_prox_preferred_turn_1: bool = params['add_prox_preferred_turn_1']
+        self.calc_border: bool = params['calc_border']
 
         self.init_kaiming_normal: bool = params['init_kaiming_normal']
         self.activation_func: any = params['activation_func']
@@ -110,55 +111,43 @@ class Agent:
 
     def get_state(self, game) -> np.array:
 
-        dir_l, dir_r, dir_u, dir_d = self.collision_calculator.get_direction_bool_vector(game.direction)
         head = game.snake[0]
         point_l1, point_r1, point_u1, point_d1 = self.collision_calculator.get_sorounding_points(head, c=1)
 
-        collisions_vec = self.collision_calculator.clac_collision_vec_by_type(
-            game,
-            self.collision_types,
-            point_l1,
-            point_r1,
-            point_u1,
-            point_d1,
-            self.n_steps_collision_check
-        )
-
         # distance to body
-        distance_to_body_vec = ProximityCalculator().calc_proximity(
+        distance_to_body_vec = DistanceCalculator().calc_distance(
             game,
             self.n_steps_proximity_check,
             self.convert_proximity_to_bool,
             self.override_proximity_to_bool,
             self.add_prox_preferred_turn_0,
             self.add_prox_preferred_turn_1,
+            self.calc_border,
             point_l1, point_r1, point_u1, point_d1,
         )
 
         snake_len = len(game.snake)
 
         state = [
-            len(game.last_trail) == 0,
+            # len(game.last_trail) == 0,
             len(game.last_trail) / game.n_blocks,
             snake_len / game.n_blocks,
 
             # distance to body
             *distance_to_body_vec,
 
-            # is collision
-            *collisions_vec,
+            # # is collision
+            # *collisions_vec,
 
             # Move direction
-            dir_l,
-            dir_r,
-            dir_u,
-            dir_d,
+            (1 / game.w) * np.sign(game.food.x - game.head.x),
+            (1 / game.h) * np.sign(game.food.y - game.head.y),
 
             # Food location
-            game.food.x < game.head.x,  # food left
-            game.food.x > game.head.x,  # food right
-            game.food.y < game.head.y,  # food up
-            game.food.y > game.head.y,  # food down
+            (game.food.x - game.head.x) / game.w,  # food dist left or right
+            (game.food.y - game.head.y) / game.h,  # food dist up or down
+            game.food.x / game.w,  # global location of food
+            game.food.y / game.h,  # global location of food
         ]
 
         return torch.tensor(state, dtype=torch.float)
@@ -240,12 +229,12 @@ def count_non_active(tensor: Tensor, func_name: str) -> int:
 @dataclass
 class RunSettings:
     project: str
-    group: str
+    group: Optional[str]
     note: str
     agent_kwargs: dict
     wandb_mode: str
     wandb_setttings: Optional[wandb.Settings] = None
-    index: Optional[int] = 0
+    index: Optional[Union[int, str]] = 0
 
     def generate_instances(self, n: int):
         return [dataclasses.replace(self, index=i) for i in range(n)]
@@ -347,19 +336,18 @@ if __name__ == '__main__':
     wandb_mode = "online"
 
     run_settings = [
-        *RunSettings(
-            "test",
-            "add_prox_preferred_turn_0",
-            "add_prox_preferred_turn_0 is a one hot encoding of argmin, of a 3 way truns proximity distance",
+        RunSettings(
+            "test-floats--only",
+            None,
+            "first attempts to treat the issue that float features does not contribute to learning, trying to solve this by using only float features replacing boolean ones with distance, or distance like feature",
             {
                 "max_games": 4_000,
                 "n_steps_proximity_check": 0,
-                "convert_proximity_to_bool": True,
-                "add_prox_preferred_turn_0": True,
-                "add_prox_preferred_turn_1": False,
+                "calc_border": True,
             },
-            wandb_mode
-        ).generate_instances(3),
+            wandb_mode,
+            index=None,
+        ),
     ]
 
     for rs in run_settings:
