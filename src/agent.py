@@ -21,7 +21,7 @@ from src.utils.agent_utils.proximity_calculator import DistanceCalculator
 
 DEFAULT_AGENT_KWARGS = {
     'n_features': 11,
-    'max_games': 5000,
+    'max_games': 10_000,
     'gamma': 0.9,
     'lr': 0.001,
     'batch_size': 1_000,
